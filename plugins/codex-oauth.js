@@ -234,7 +234,97 @@ function userContentToResponses(content) {
   return parts.length ? parts : [{ type: "input_text", text: "" }];
 }
 
-function chatToolsToResponses(tools) {
+function mcpToolParts(name) {
+  const match = String(name || "").match(/^mcp__(.+?)__(.+)$/);
+  if (!match) return undefined;
+  return { server: match[1], operation: match[2] };
+}
+
+function sanitizeToolName(value) {
+  return String(value || "tool").replace(/[^A-Za-z0-9_]/g, "_").slice(0, 48);
+}
+
+function isMcpDispatchName(name) {
+  return /^mcp_dispatch__[A-Za-z0-9_]+$/.test(String(name || ""));
+}
+
+function summarizeSchema(schema = {}) {
+  const props = schema.properties && typeof schema.properties === "object" ? schema.properties : {};
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  const names = Object.keys(props).slice(0, 12);
+  const propText = names
+    .map((name) => {
+      const prop = props[name] || {};
+      const type = Array.isArray(prop.type) ? prop.type.join("|") : prop.type || (prop.enum ? "enum" : "any");
+      return `${name}:${type}`;
+    })
+    .join(", ");
+  return `required=[${required.join(",")}] props={${propText}${Object.keys(props).length > names.length ? ",…" : ""}}`;
+}
+
+function shouldCompressMcpTools(options = {}) {
+  const env = process.env.CLAUDE_GPT_COMPRESS_MCP;
+  if (env && ["0", "false", "off", "no"].includes(env.toLowerCase())) return false;
+  return options.compressMcpTools !== false;
+}
+
+function compressMcpTools(tools, options = {}) {
+  if (!shouldCompressMcpTools(options)) return tools;
+  const minTools = Number(options.compressMcpMinTools ?? process.env.CLAUDE_GPT_COMPRESS_MCP_MIN_TOOLS ?? 4);
+  const passthrough = [];
+  const groups = new Map();
+
+  for (const tool of tools) {
+    const parts = mcpToolParts(tool.name);
+    if (!parts) {
+      passthrough.push(tool);
+      continue;
+    }
+    if (!groups.has(parts.server)) groups.set(parts.server, []);
+    groups.get(parts.server).push({ ...tool, mcp: parts });
+  }
+
+  for (const [server, group] of groups) {
+    if (group.length < minTools) {
+      passthrough.push(...group.map(({ mcp, ...tool }) => tool));
+      continue;
+    }
+
+    const names = group.map((tool) => tool.name);
+    const details = group
+      .map((tool) => `- ${tool.name}: ${tool.description || "No description."} ${summarizeSchema(tool.parameters)}`)
+      .join("\n");
+
+    passthrough.push({
+      type: "function",
+      name: `mcp_dispatch__${sanitizeToolName(server)}`,
+      description:
+        `Dispatch to one ${server} MCP tool. Choose the exact original tool name and provide its input JSON. ` +
+        `Available tools:\n${details}`,
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            enum: names,
+            description: "Exact original MCP tool name to call.",
+          },
+          input: {
+            type: "object",
+            description: "Input object for the selected MCP tool.",
+            additionalProperties: true,
+          },
+        },
+        required: ["name", "input"],
+        additionalProperties: false,
+      },
+    });
+  }
+
+  return passthrough;
+}
+
+function chatToolsToResponses(tools, options = {}) {
   if (!Array.isArray(tools)) return undefined;
   const converted = [];
   for (const tool of tools) {
@@ -257,7 +347,8 @@ function chatToolsToResponses(tools) {
       });
     }
   }
-  return converted.length ? converted : undefined;
+  const compressed = compressMcpTools(converted, options);
+  return compressed.length ? compressed : undefined;
 }
 
 function toolChoiceToResponses(toolChoice) {
@@ -321,7 +412,7 @@ function chatToResponses(body, options = {}) {
     parallel_tool_calls: true,
   };
 
-  const tools = chatToolsToResponses(body.tools);
+  const tools = chatToolsToResponses(body.tools, options);
   if (tools) request.tools = tools;
 
   const toolChoice = toolChoiceToResponses(body.tool_choice);
@@ -408,6 +499,20 @@ function finishReasonFromState(state) {
   return state.finishReason || "stop";
 }
 
+function mapMcpDispatchCall(name, argumentsText) {
+  if (!isMcpDispatchName(name)) return { name, argumentsText };
+  try {
+    const parsed = JSON.parse(argumentsText || "{}");
+    if (typeof parsed.name === "string" && parsed.name.startsWith("mcp__")) {
+      return {
+        name: parsed.name,
+        argumentsText: JSON.stringify(parsed.input && typeof parsed.input === "object" ? parsed.input : {}),
+      };
+    }
+  } catch {}
+  return { name, argumentsText };
+}
+
 function updateStateFromEvent(state, payload) {
   if (!payload || typeof payload !== "object") return;
   if (payload.response) {
@@ -448,24 +553,29 @@ function responsesStreamToChatStream(readable, logger) {
               const item = payload.item;
               if (item?.type === "function_call") {
                 const index = payload.output_index ?? state.toolCalls.size;
+                const suppressed = isMcpDispatchName(item.name);
                 state.toolCalls.set(index, {
                   id: item.call_id,
                   name: item.name,
                   arguments: "",
+                  suppressed,
+                  emitted: false,
                 });
-                emit(
-                  controller,
-                  createChatChunk(state, {
-                    tool_calls: [
-                      {
-                        index,
-                        id: item.call_id,
-                        type: "function",
-                        function: { name: item.name, arguments: "" },
-                      },
-                    ],
-                  }),
-                );
+                if (!suppressed) {
+                  emit(
+                    controller,
+                    createChatChunk(state, {
+                      tool_calls: [
+                        {
+                          index,
+                          id: item.call_id,
+                          type: "function",
+                          function: { name: item.name, arguments: "" },
+                        },
+                      ],
+                    }),
+                  );
+                }
               }
               break;
             }
@@ -474,25 +584,46 @@ function responsesStreamToChatStream(readable, logger) {
               const call = state.toolCalls.get(index) || { id: payload.item_id, name: "tool", arguments: "" };
               call.arguments += payload.delta || "";
               state.toolCalls.set(index, call);
-              emit(
-                controller,
-                createChatChunk(state, {
-                  tool_calls: [
-                    {
-                      index,
-                      id: call.id,
-                      type: "function",
-                      function: { name: call.name, arguments: payload.delta || "" },
-                    },
-                  ],
-                }),
-              );
+              if (!call.suppressed) {
+                emit(
+                  controller,
+                  createChatChunk(state, {
+                    tool_calls: [
+                      {
+                        index,
+                        id: call.id,
+                        type: "function",
+                        function: { name: call.name, arguments: payload.delta || "" },
+                      },
+                    ],
+                  }),
+                );
+              }
               break;
             }
             case "response.function_call_arguments.done": {
               const index = payload.output_index ?? 0;
               const call = state.toolCalls.get(index);
               if (call && payload.arguments) call.arguments = payload.arguments;
+              if (call?.suppressed && !call.emitted) {
+                const mapped = mapMcpDispatchCall(call.name, call.arguments);
+                call.name = mapped.name;
+                call.arguments = mapped.argumentsText;
+                call.emitted = true;
+                emit(
+                  controller,
+                  createChatChunk(state, {
+                    tool_calls: [
+                      {
+                        index,
+                        id: call.id,
+                        type: "function",
+                        function: { name: call.name, arguments: call.arguments },
+                      },
+                    ],
+                  }),
+                );
+              }
               break;
             }
             case "response.reasoning_summary_text.delta": {
@@ -577,7 +708,18 @@ async function responsesStreamToChatJson(readable) {
 
   const toolCalls = Array.from(state.toolCalls.keys())
     .sort((a, b) => a - b)
-    .map((key) => state.toolCalls.get(key));
+    .map((key) => {
+      const call = state.toolCalls.get(key);
+      const mapped = mapMcpDispatchCall(call.function.name, call.function.arguments);
+      return {
+        ...call,
+        function: {
+          ...call.function,
+          name: mapped.name,
+          arguments: mapped.argumentsText,
+        },
+      };
+    });
 
   return {
     id: state.responseId || `chatcmpl_${Date.now()}`,

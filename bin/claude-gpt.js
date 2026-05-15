@@ -122,7 +122,7 @@ function parseWrapperFlags(args) {
     }
     cleaned.push(arg);
   }
-  const env = String(process.env.CLAUDE_GPT_MCP || "off").toLowerCase();
+  const env = String(process.env.CLAUDE_GPT_MCP || "all").toLowerCase();
   if (["all", "full", "default", "on", "1", "true"].includes(env)) withMcp = true;
   if (["off", "none", "builtin", "builtins", "0", "false"].includes(env)) noMcp = true;
   return { args: cleaned, withMcp, noMcp };
@@ -185,7 +185,7 @@ async function main() {
   env.NODE_OPTIONS = appendNodeOption(env, "--no-deprecation");
 
   const parsed = parseWrapperFlags(process.argv.slice(2));
-  const mcpMode = parsed.withMcp && !parsed.noMcp ? "Claude/default MCPs" : "built-in tools only";
+  const mcpMode = parsed.withMcp && !parsed.noMcp ? "Claude/default MCPs (compressed)" : "built-in tools only";
   const args = withMcpPolicy(withLaunchModel(parsed.args), parsed);
   await showStartupBanner(args, mcpMode);
 
