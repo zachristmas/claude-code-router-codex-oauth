@@ -11,6 +11,7 @@ const CCR_DIR = process.env.CCR_DIR || path.join(os.homedir(), ".claude-code-rou
 const BIN_DIR = process.env.BIN_DIR || path.join(os.homedir(), ".local", "bin");
 const AUTH_FILE = process.env.CODEX_OAUTH_AUTH_FILE || path.join(CCR_DIR, "codex-auth.json");
 const SETTINGS_FILE = process.env.CODEX_OAUTH_SETTINGS_FILE || path.join(CCR_DIR, "codex-settings.json");
+const EMPTY_MCP_FILE = process.env.CLAUDE_GPT_EMPTY_MCP_FILE || path.join(CCR_DIR, "empty-mcp.json");
 const STATUSLINE_FILE = path.join(CCR_DIR, "statusline-codex.js");
 const APIKEY = process.env.CCR_APIKEY || "sk-ccr-local";
 const HOST = process.env.CCR_HOST || "127.0.0.1";
@@ -85,6 +86,13 @@ function writeDefaultSettings() {
   );
   try {
     fs.chmodSync(SETTINGS_FILE, 0o600);
+  } catch {}
+}
+
+function writeEmptyMcpConfig() {
+  fs.writeFileSync(EMPTY_MCP_FILE, JSON.stringify({ mcpServers: {} }, null, 2) + "\n", { mode: 0o600 });
+  try {
+    fs.chmodSync(EMPTY_MCP_FILE, 0o600);
   } catch {}
 }
 
@@ -194,6 +202,7 @@ function main() {
   installLaunchers();
   installClaudeCommands();
   writeDefaultSettings();
+  writeEmptyMcpConfig();
   writeConfig();
 
   if (!fs.existsSync(AUTH_FILE)) {

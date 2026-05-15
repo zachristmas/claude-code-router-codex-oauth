@@ -8,6 +8,7 @@ const { spawn, spawnSync } = require("node:child_process");
 
 const AUTH_FILE = process.env.CODEX_OAUTH_AUTH_FILE || path.join(os.homedir(), ".claude-code-router", "codex-auth.json");
 const SETTINGS_FILE = process.env.CODEX_OAUTH_SETTINGS_FILE || path.join(os.homedir(), ".claude-code-router", "codex-settings.json");
+const EMPTY_MCP_FILE = process.env.CLAUDE_GPT_EMPTY_MCP_FILE || path.join(os.homedir(), ".claude-code-router", "empty-mcp.json");
 const DEFAULT_MODEL = "gpt-5.5";
 const DEFAULT_EFFORT = "xhigh";
 const LAUNCH_MODEL = "openai-codex,gpt-5.5";
@@ -30,6 +31,10 @@ function writeJson0600(file, value) {
   try {
     fs.chmodSync(file, 0o600);
   } catch {}
+}
+
+function ensureEmptyMcpConfig() {
+  if (!fs.existsSync(EMPTY_MCP_FILE)) writeJson0600(EMPTY_MCP_FILE, { mcpServers: {} });
 }
 
 function opencodeAuthCandidates() {
@@ -102,17 +107,50 @@ function withLaunchModel(args) {
   return ["--model", LAUNCH_MODEL, ...cleaned];
 }
 
+function parseWrapperFlags(args) {
+  let withMcp = false;
+  let noMcp = false;
+  const cleaned = [];
+  for (const arg of args) {
+    if (arg === "--with-mcp" || arg === "--claude-gpt-with-mcp") {
+      withMcp = true;
+      continue;
+    }
+    if (arg === "--no-mcp" || arg === "--claude-gpt-no-mcp") {
+      noMcp = true;
+      continue;
+    }
+    cleaned.push(arg);
+  }
+  const env = String(process.env.CLAUDE_GPT_MCP || "off").toLowerCase();
+  if (["all", "full", "default", "on", "1", "true"].includes(env)) withMcp = true;
+  if (["off", "none", "builtin", "builtins", "0", "false"].includes(env)) noMcp = true;
+  return { args: cleaned, withMcp, noMcp };
+}
+
+function hasMcpArgs(args) {
+  return args.some((arg) => arg === "--mcp-config" || arg.startsWith("--mcp-config=") || arg === "--strict-mcp-config");
+}
+
+function withMcpPolicy(args, flags) {
+  if (flags.withMcp && !flags.noMcp) return args;
+  if (hasMcpArgs(args)) return args;
+  ensureEmptyMcpConfig();
+  return ["--strict-mcp-config", "--mcp-config", EMPTY_MCP_FILE, ...args];
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function showStartupBanner(args) {
+async function showStartupBanner(args, mcpMode) {
   if (!shouldShowInteractiveBanner(args)) return;
   if (process.env.CLAUDE_GPT_BANNER === "0" || process.env.CLAUDE_GPT_BANNER === "false") return;
   console.error("╭────────────────────────────────────────────────────────────╮");
   console.error("│ claude-gpt: Claude Code → CCR → ChatGPT Codex OAuth       │");
   console.error(`│ launch --model: ${LAUNCH_MODEL.padEnd(40)} │`);
   console.error(`│ upstream:       ${`${settingsModel()} ${settingsEffort()}`.padEnd(40)} │`);
+  console.error(`│ mcp:            ${mcpMode.padEnd(40)} │`);
   console.error("│ tweak inside:   /gpt-settings, /gpt-model, /gpt-effort     │");
   console.error("│ verify:         claude-gpt-doctor                          │");
   console.error("╰────────────────────────────────────────────────────────────╯");
@@ -146,8 +184,10 @@ async function main() {
   const env = { ...process.env };
   env.NODE_OPTIONS = appendNodeOption(env, "--no-deprecation");
 
-  const args = withLaunchModel(process.argv.slice(2));
-  await showStartupBanner(args);
+  const parsed = parseWrapperFlags(process.argv.slice(2));
+  const mcpMode = parsed.withMcp && !parsed.noMcp ? "Claude/default MCPs" : "built-in tools only";
+  const args = withMcpPolicy(withLaunchModel(parsed.args), parsed);
+  await showStartupBanner(args, mcpMode);
 
   const child = spawn("ccr", ["code", ...args], {
     stdio: "inherit",

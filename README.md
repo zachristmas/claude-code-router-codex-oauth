@@ -108,7 +108,21 @@ By default `claude-gpt` **always launches Claude Code with**:
 --model openai-codex,gpt-5.5
 ```
 
-and the transformer defaults the upstream Codex request to `gpt-5.5` with `xhigh` reasoning effort.
+and the transformer defaults the upstream Codex request to `gpt-5.5` with the configured reasoning effort.
+
+By default `claude-gpt` also runs with **built-in tools only**:
+
+```bash
+--strict-mcp-config --mcp-config ~/.claude-code-router/empty-mcp.json
+```
+
+This avoids Codex backend `server_error`/timeout loops from very large MCP tool schemas. To opt back into your normal project/user MCP servers for a session:
+
+```bash
+claude-gpt --with-mcp
+# or
+CLAUDE_GPT_MCP=all claude-gpt
+```
 
 Interactive startup prints a banner showing the route and active upstream settings. The installer also replaces/augments CCR's statusline so it shows the route plus current context/session token counters when Claude Code provides them:
 
@@ -156,6 +170,7 @@ claude-work -p "Reply with exactly: ok"
 - CCR statusline module: `~/.claude-code-router/statusline-codex.js`
 - OAuth credentials: `~/.claude-code-router/codex-auth.json`
 - Live Codex settings: `~/.claude-code-router/codex-settings.json`
+- Empty MCP config for stable built-in-only mode: `~/.claude-code-router/empty-mcp.json`
 - Launchers: npm global shims, or `~/.local/bin/*` when using the direct installer
 
 The installer backs up an existing CCR config before overwriting it:
@@ -174,6 +189,7 @@ The installer backs up an existing CCR config before overwriting it:
 - `BIN_DIR` — direct installer launcher dir, default `~/.local/bin`
 - `CLAUDE_GPT_MODEL` — upstream Codex model override
 - `CLAUDE_GPT_EFFORT` / `CLAUDE_GPT_REASONING_EFFORT` — upstream Codex reasoning effort override
+- `CLAUDE_GPT_MCP=all` — include normal Claude Code/project MCP servers; default is built-in tools only
 - `CLAUDE_GPT_BANNER=0` — disable interactive startup banner
 - `CLAUDE_GPT_BANNER_DELAY_MS` — banner delay before launching Claude Code, default `900`
 - `SKIP_CCR_INSTALL=1` — do not auto-install CCR
