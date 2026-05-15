@@ -30,7 +30,16 @@ Do **not** commit or share OAuth files. Tokens are stored locally at:
 
 ## Install
 
-### Recommended: from this repo
+### Recommended: install directly from GitHub
+
+No npm package publish is required:
+
+```bash
+npm install -g github:zachristmas/claude-code-router-codex-oauth
+ccr-codex-oauth-install
+```
+
+### From a local clone
 
 ```bash
 git clone https://github.com/zachristmas/claude-code-router-codex-oauth.git
