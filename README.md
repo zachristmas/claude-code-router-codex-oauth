@@ -110,10 +110,10 @@ By default `claude-gpt` **always launches Claude Code with**:
 
 and the transformer defaults the upstream Codex request to `gpt-5.5` with `xhigh` reasoning effort.
 
-Interactive startup prints a banner showing the route and active upstream settings. The installer also replaces/augments CCR's statusline so it shows something like:
+Interactive startup prints a banner showing the route and active upstream settings. The installer also replaces/augments CCR's statusline so it shows the route plus current context/session token counters when Claude Code provides them:
 
 ```text
-GPT-5.5 xhigh via Codex OAuth
+GPT-5.5 xhigh via Codex OAuth · ctx 42.1k/400k 11% · out 3.7k
 ```
 
 Claude Code's top-left TUI label may still display its Anthropic-facing model alias in some cases. The CCR statusline/logs and `claude-gpt-doctor` show the actual routed upstream model.
@@ -177,6 +177,22 @@ The installer backs up an existing CCR config before overwriting it:
 - `CLAUDE_GPT_BANNER=0` — disable interactive startup banner
 - `CLAUDE_GPT_BANNER_DELAY_MS` — banner delay before launching Claude Code, default `900`
 - `SKIP_CCR_INSTALL=1` — do not auto-install CCR
+
+## Token/context display and compaction
+
+The statusline token counters come from Claude Code's statusline payload:
+
+- `ctx used/window %` — current context-window input tokens and percent
+- `out` — current context/session output token counter when available
+- trailing `↑` / `↓` modules — last request input/output usage
+
+No custom `claude-gpt` auto-compact limit is configured. Claude Code still owns compaction behavior. In this bridge config, CCR's only token threshold is routing-related:
+
+```json
+"longContextThreshold": 120000
+```
+
+That threshold no longer changes models because all routes are set to `openai-codex,gpt-5.5`; it does not trigger compaction.
 
 ## Verify
 

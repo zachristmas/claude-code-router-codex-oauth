@@ -24,8 +24,24 @@ function prettyModel(model) {
   return normalizeModel(model).replace(/^gpt/i, "GPT");
 }
 
-module.exports = function codexStatusLine(_vars = {}, options = {}) {
+function present(value) {
+  return value !== undefined && value !== null && String(value) !== "" && String(value) !== "0";
+}
+
+function contextText(vars = {}) {
+  const pieces = [];
+  if (present(vars.totalInputTokens) || present(vars.contextWindowSize)) {
+    const used = present(vars.totalInputTokens) ? vars.totalInputTokens : "0";
+    const size = present(vars.contextWindowSize) ? vars.contextWindowSize : "?";
+    const pct = present(vars.contextPercent) ? ` ${vars.contextPercent}%` : "";
+    pieces.push(`ctx ${used}/${size}${pct}`);
+  }
+  if (present(vars.totalOutputTokens)) pieces.push(`out ${vars.totalOutputTokens}`);
+  return pieces.length ? ` · ${pieces.join(" · ")}` : "";
+}
+
+module.exports = function codexStatusLine(vars = {}, options = {}) {
   const file = options.settingsFile || process.env.CODEX_OAUTH_SETTINGS_FILE || DEFAULT_SETTINGS_FILE;
   const settings = { ...DEFAULTS, ...(readJson(file) || {}) };
-  return `${prettyModel(settings.model)} ${settings.reasoningEffort || DEFAULTS.reasoningEffort} via Codex OAuth`;
+  return `${prettyModel(settings.model)} ${settings.reasoningEffort || DEFAULTS.reasoningEffort} via Codex OAuth${contextText(vars)}`;
 };
