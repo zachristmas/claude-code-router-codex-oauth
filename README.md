@@ -9,7 +9,8 @@ Run the **Claude Code harness** against your ChatGPT/Codex OAuth subscription qu
 - `claude-gpt` — Claude Code -> CCR -> ChatGPT Codex backend using OAuth.
 - `claude-gpt-auth` — local OAuth credential helper.
 - `claude-gpt-settings` — live model/reasoning settings helper.
-- `/gpt-settings` — Claude Code slash command installed by the installer.
+- `claude-gpt-doctor` — verifies CCR, OAuth, settings, and live Codex routing.
+- `/gpt-settings`, `/gpt-model`, `/gpt-effort` — Claude Code slash commands installed by the installer.
 
 Works on macOS, Linux, and Windows with Node 20+.
 
@@ -101,9 +102,21 @@ claude-gpt
 claude-gpt -p "Reply with exactly: ok"
 ```
 
-By default `claude-gpt` uses `gpt-5.5` with `xhigh` reasoning effort.
+By default `claude-gpt` **always launches Claude Code with**:
 
-Claude Code's top-left TUI label may still display its Anthropic-facing model alias, such as `Sonnet 4.6`, and `API Usage Billing`. That is normal for this bridge: Claude Code still speaks Anthropic-shaped requests to CCR, and CCR routes them to ChatGPT/Codex OAuth upstream. The installer enables CCR's status line so the routed model is visible after responses. You can also verify routing with CCR logs or a `claude-gpt -p` smoke test.
+```bash
+--model openai-codex,gpt-5.5
+```
+
+and the transformer defaults the upstream Codex request to `gpt-5.5` with `xhigh` reasoning effort.
+
+Interactive startup prints a banner showing the route and active upstream settings. The installer also replaces/augments CCR's statusline so it shows something like:
+
+```text
+GPT-5.5 xhigh via Codex OAuth
+```
+
+Claude Code's top-left TUI label may still display its Anthropic-facing model alias in some cases. The CCR statusline/logs and `claude-gpt-doctor` show the actual routed upstream model.
 
 ### Tweak model/effort
 
@@ -117,12 +130,14 @@ claude-gpt-settings preset fast      # gpt-5.4-mini + none
 claude-gpt-settings set --model gpt-5.5 --effort xhigh
 ```
 
-From inside a `claude-gpt` Claude Code session, use the installed slash command:
+From inside a `claude-gpt` Claude Code session, use the installed slash commands:
 
 ```text
 /gpt-settings show
 /gpt-settings preset fast
 /gpt-settings set --model gpt-5.5 --effort xhigh
+/gpt-model gpt-5.5
+/gpt-effort xhigh
 ```
 
 Settings are stored at `~/.claude-code-router/codex-settings.json`. The transformer reads that file on every request, so changes apply to the next request without restarting CCR. The top-left Claude Code model label may not update until a new session; the CCR statusline/logs show the actual routed upstream model.
@@ -138,6 +153,7 @@ claude-work -p "Reply with exactly: ok"
 
 - CCR config: `~/.claude-code-router/config.json`
 - CCR transformer: `~/.claude-code-router/plugins/codex-oauth.js`
+- CCR statusline module: `~/.claude-code-router/statusline-codex.js`
 - OAuth credentials: `~/.claude-code-router/codex-auth.json`
 - Live Codex settings: `~/.claude-code-router/codex-settings.json`
 - Launchers: npm global shims, or `~/.local/bin/*` when using the direct installer
@@ -156,13 +172,18 @@ The installer backs up an existing CCR config before overwriting it:
 - `CCR_APIKEY` — default `sk-ccr-local`
 - `CODEX_OAUTH_AUTH_FILE` — default `~/.claude-code-router/codex-auth.json`
 - `BIN_DIR` — direct installer launcher dir, default `~/.local/bin`
-- `CLAUDE_GPT_MODEL` — launch-time model override for Claude Code's `--model`
+- `CLAUDE_GPT_MODEL` — upstream Codex model override
+- `CLAUDE_GPT_EFFORT` / `CLAUDE_GPT_REASONING_EFFORT` — upstream Codex reasoning effort override
+- `CLAUDE_GPT_BANNER=0` — disable interactive startup banner
+- `CLAUDE_GPT_BANNER_DELAY_MS` — banner delay before launching Claude Code, default `900`
 - `SKIP_CCR_INSTALL=1` — do not auto-install CCR
 
 ## Verify
 
 ```bash
 npm run check
+claude-gpt-doctor          # includes a live Codex smoke test
+claude-gpt-doctor --local  # local checks only
 claude-gpt -p "Reply with exactly: ok"
 claude-gpt --allowedTools 'Bash(pwd)' -p 'Run pwd and reply only with the resulting path.'
 ```

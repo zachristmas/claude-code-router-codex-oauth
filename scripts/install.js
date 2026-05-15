@@ -11,6 +11,7 @@ const CCR_DIR = process.env.CCR_DIR || path.join(os.homedir(), ".claude-code-rou
 const BIN_DIR = process.env.BIN_DIR || path.join(os.homedir(), ".local", "bin");
 const AUTH_FILE = process.env.CODEX_OAUTH_AUTH_FILE || path.join(CCR_DIR, "codex-auth.json");
 const SETTINGS_FILE = process.env.CODEX_OAUTH_SETTINGS_FILE || path.join(CCR_DIR, "codex-settings.json");
+const STATUSLINE_FILE = path.join(CCR_DIR, "statusline-codex.js");
 const APIKEY = process.env.CCR_APIKEY || "sk-ccr-local";
 const HOST = process.env.CCR_HOST || "127.0.0.1";
 const PORT = Number(process.env.CCR_PORT || 3456);
@@ -60,6 +61,7 @@ function installLaunchers() {
     ["claude-work", "claude-work.js"],
     ["claude-gpt-auth", "claude-gpt-auth.js"],
     ["claude-gpt-settings", "claude-gpt-settings.js"],
+    ["claude-gpt-doctor", "claude-gpt-doctor.js"],
   ];
 
   for (const [name, file] of entries) {
@@ -89,7 +91,9 @@ function writeDefaultSettings() {
 function installClaudeCommands() {
   const commandsDir = path.join(os.homedir(), ".claude", "commands");
   mkdir(commandsDir, 0o700);
-  copy(path.join(ROOT, "commands", "gpt-settings.md"), path.join(commandsDir, "gpt-settings.md"), 0o644);
+  for (const file of ["gpt-settings.md", "gpt-model.md", "gpt-effort.md"]) {
+    copy(path.join(ROOT, "commands", file), path.join(commandsDir, file), 0o644);
+  }
 }
 
 function writeConfig() {
@@ -111,6 +115,16 @@ function writeConfig() {
     NON_INTERACTIVE_MODE: false,
     StatusLine: {
       enabled: true,
+      currentStyle: "default",
+      default: {
+        modules: [
+          { type: "workDir", icon: "", text: "{{workDirName}}", color: "bright_blue" },
+          { type: "gitBranch", icon: "", text: "{{gitBranch}}", color: "bright_magenta" },
+          { type: "script", icon: "", scriptPath: STATUSLINE_FILE, color: "bright_cyan", options: { settingsFile: SETTINGS_FILE } },
+          { type: "usage", icon: "↑", text: "{{inputTokens}}", color: "bright_green" },
+          { type: "usage", icon: "↓", text: "{{outputTokens}}", color: "bright_yellow" },
+        ],
+      },
     },
     transformers: [
       {
@@ -176,6 +190,7 @@ function main() {
   }
 
   copy(path.join(ROOT, "plugins", "codex-oauth.js"), path.join(CCR_DIR, "plugins", "codex-oauth.js"), 0o644);
+  copy(path.join(ROOT, "statusline", "codex.js"), STATUSLINE_FILE, 0o644);
   installLaunchers();
   installClaudeCommands();
   writeDefaultSettings();
@@ -190,8 +205,10 @@ function main() {
 
   console.log("\nInstalled Claude Code Router Codex OAuth bridge.");
   console.log("Launchers:");
-  console.log("  claude-gpt   # Claude Code harness via ChatGPT/Codex OAuth");
-  console.log("  claude-work  # direct Claude Code/work-plan routing");
+  console.log("  claude-gpt          # Claude Code harness via ChatGPT/Codex OAuth");
+  console.log("  claude-work         # direct Claude Code/work-plan routing");
+  console.log("  claude-gpt-settings # tweak model/effort");
+  console.log("  claude-gpt-doctor   # verify routing/settings");
   if (!process.env.PATH?.split(path.delimiter).includes(BIN_DIR)) {
     console.log(`\nNote: ${BIN_DIR} is not on PATH in this shell. npm install -g . will create global shims, or add that directory to PATH.`);
   }

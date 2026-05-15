@@ -10,12 +10,13 @@
     "claude-work": "bin/claude-work.js",
     "claude-gpt-auth": "bin/claude-gpt-auth.js",
     "claude-gpt-settings": "bin/claude-gpt-settings.js",
+    "claude-gpt-doctor": "bin/claude-gpt-doctor.js",
     "ccr-codex-oauth-install": "scripts/install.js"
   },
   "scripts": {
     "install:local": "node scripts/install.js",
     "self-test": "node plugins/codex-oauth.js gpt-5.4-mini",
-    "check": "node --check plugins/codex-oauth.js && node --check bin/claude-gpt.js && node --check bin/claude-work.js && node --check bin/claude-gpt-auth.js && node --check bin/claude-gpt-settings.js && node --check scripts/install.js"
+    "check": "node --check plugins/codex-oauth.js && node --check bin/claude-gpt.js && node --check bin/claude-work.js && node --check bin/claude-gpt-auth.js && node --check bin/claude-gpt-settings.js && node --check bin/claude-gpt-doctor.js && node --check scripts/install.js && node --check statusline/codex.js"
   },
   "engines": {
     "node": ">=20"
@@ -26,6 +27,7 @@
     "scripts/",
     "config/",
     "commands/",
+    "statusline/",
     "install.sh",
     "README.md",
     "LICENSE",

@@ -7,7 +7,23 @@
   "API_TIMEOUT_MS": 600000,
   "NON_INTERACTIVE_MODE": false,
   "StatusLine": {
-    "enabled": true
+    "enabled": true,
+    "currentStyle": "default",
+    "default": {
+      "modules": [
+        { "type": "workDir", "icon": "", "text": "{{workDirName}}", "color": "bright_blue" },
+        { "type": "gitBranch", "icon": "", "text": "{{gitBranch}}", "color": "bright_magenta" },
+        {
+          "type": "script",
+          "icon": "",
+          "scriptPath": "<HOME>/.claude-code-router/statusline-codex.js",
+          "color": "bright_cyan",
+          "options": { "settingsFile": "<HOME>/.claude-code-router/codex-settings.json" }
+        },
+        { "type": "usage", "icon": "↑", "text": "{{inputTokens}}", "color": "bright_green" },
+        { "type": "usage", "icon": "↓", "text": "{{outputTokens}}", "color": "bright_yellow" }
+      ]
+    }
   },
   "transformers": [
     {

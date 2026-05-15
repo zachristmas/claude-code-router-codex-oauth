@@ -134,8 +134,14 @@ function loadCodexSettings(options = {}) {
   const settingsFile = expandHome(options.settingsFile || process.env.CODEX_OAUTH_SETTINGS_FILE || DEFAULT_SETTINGS_FILE);
   const settings = readJson(settingsFile) || {};
   return {
-    model: normalizeModelId(settings.model || options.model || options.defaultModel),
-    reasoningEffort: settings.reasoningEffort || settings.effort || options.reasoningEffort || options.defaultReasoningEffort,
+    model: normalizeModelId(process.env.CLAUDE_GPT_MODEL || settings.model || options.model || options.defaultModel),
+    reasoningEffort:
+      process.env.CLAUDE_GPT_EFFORT ||
+      process.env.CLAUDE_GPT_REASONING_EFFORT ||
+      settings.reasoningEffort ||
+      settings.effort ||
+      options.reasoningEffort ||
+      options.defaultReasoningEffort,
     settingsFile,
   };
 }

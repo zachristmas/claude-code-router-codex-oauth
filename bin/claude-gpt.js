@@ -9,6 +9,8 @@ const { spawn, spawnSync } = require("node:child_process");
 const AUTH_FILE = process.env.CODEX_OAUTH_AUTH_FILE || path.join(os.homedir(), ".claude-code-router", "codex-auth.json");
 const SETTINGS_FILE = process.env.CODEX_OAUTH_SETTINGS_FILE || path.join(os.homedir(), ".claude-code-router", "codex-settings.json");
 const DEFAULT_MODEL = "gpt-5.5";
+const DEFAULT_EFFORT = "xhigh";
+const LAUNCH_MODEL = "openai-codex,gpt-5.5";
 
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
@@ -81,16 +83,44 @@ function settingsModel() {
   return String(model).includes(",") ? String(model).split(",").pop().trim() : String(model).trim();
 }
 
-function hasModelArg(args) {
-  return args.some((arg) => arg === "--model" || arg.startsWith("--model="));
+function settingsEffort() {
+  const settings = readJson(SETTINGS_FILE) || {};
+  return String(process.env.CLAUDE_GPT_EFFORT || settings.reasoningEffort || DEFAULT_EFFORT).trim();
 }
 
-function withDefaultModel(args) {
-  if (hasModelArg(args)) return args;
-  return ["--model", `openai-codex,${settingsModel()}`, ...args];
+function withLaunchModel(args) {
+  const cleaned = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--model") {
+      i++;
+      continue;
+    }
+    if (arg.startsWith("--model=")) continue;
+    cleaned.push(arg);
+  }
+  return ["--model", LAUNCH_MODEL, ...cleaned];
 }
 
-function main() {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function showStartupBanner(args) {
+  if (!shouldShowInteractiveBanner(args)) return;
+  if (process.env.CLAUDE_GPT_BANNER === "0" || process.env.CLAUDE_GPT_BANNER === "false") return;
+  console.error("╭────────────────────────────────────────────────────────────╮");
+  console.error("│ claude-gpt: Claude Code → CCR → ChatGPT Codex OAuth       │");
+  console.error(`│ launch --model: ${LAUNCH_MODEL.padEnd(40)} │`);
+  console.error(`│ upstream:       ${`${settingsModel()} ${settingsEffort()}`.padEnd(40)} │`);
+  console.error("│ tweak inside:   /gpt-settings, /gpt-model, /gpt-effort     │");
+  console.error("│ verify:         claude-gpt-doctor                          │");
+  console.error("╰────────────────────────────────────────────────────────────╯");
+  const delay = Number(process.env.CLAUDE_GPT_BANNER_DELAY_MS || 900);
+  if (delay > 0) await sleep(delay);
+}
+
+async function main() {
   if (!fs.existsSync(AUTH_FILE)) {
     const auth = loadOpenCodeAuth();
     if (auth) {
@@ -116,12 +146,8 @@ function main() {
   const env = { ...process.env };
   env.NODE_OPTIONS = appendNodeOption(env, "--no-deprecation");
 
-  const args = withDefaultModel(process.argv.slice(2));
-  if (shouldShowInteractiveBanner(args)) {
-    const settings = readJson(SETTINGS_FILE) || {};
-    console.error(`claude-gpt: routing Claude Code through CCR -> ChatGPT/Codex OAuth (${settingsModel()} ${settings.reasoningEffort || "xhigh"}).`);
-    console.error("claude-gpt: use /gpt-settings inside Claude Code, or run claude-gpt-settings, to tweak model/effort.");
-  }
+  const args = withLaunchModel(process.argv.slice(2));
+  await showStartupBanner(args);
 
   const child = spawn("ccr", ["code", ...args], {
     stdio: "inherit",
@@ -139,4 +165,7 @@ function main() {
   });
 }
 
-main();
+main().catch((error) => {
+  console.error(error.message || error);
+  process.exit(1);
+});
