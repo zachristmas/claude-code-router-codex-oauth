@@ -89,6 +89,9 @@ function writeConfig() {
     LOG_LEVEL: "info",
     API_TIMEOUT_MS: 600000,
     NON_INTERACTIVE_MODE: false,
+    StatusLine: {
+      enabled: true,
+    },
     transformers: [
       {
         path: path.join(CCR_DIR, "plugins", "codex-oauth.js"),

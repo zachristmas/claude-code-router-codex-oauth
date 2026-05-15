@@ -6,6 +6,9 @@
   "LOG_LEVEL": "info",
   "API_TIMEOUT_MS": 600000,
   "NON_INTERACTIVE_MODE": false,
+  "StatusLine": {
+    "enabled": true
+  },
   "transformers": [
     {
       "path": "<HOME>/.claude-code-router/plugins/codex-oauth.js",
