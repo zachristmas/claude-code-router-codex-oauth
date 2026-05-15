@@ -68,6 +68,11 @@ function appendNodeOption(env, option) {
   return `${current} ${option}`.trim();
 }
 
+function shouldShowInteractiveBanner(args) {
+  if (!process.stdout.isTTY) return false;
+  return !args.some((arg) => arg === "-p" || arg === "--print" || arg.startsWith("--print="));
+}
+
 function main() {
   if (!fs.existsSync(AUTH_FILE)) {
     const auth = loadOpenCodeAuth();
@@ -94,7 +99,13 @@ function main() {
   const env = { ...process.env };
   env.NODE_OPTIONS = appendNodeOption(env, "--no-deprecation");
 
-  const child = spawn("ccr", ["code", ...process.argv.slice(2)], {
+  const args = process.argv.slice(2);
+  if (shouldShowInteractiveBanner(args)) {
+    console.error("claude-gpt: routing Claude Code through CCR -> ChatGPT/Codex OAuth (default upstream: gpt-5.4).");
+    console.error("claude-gpt: Claude Code's UI may still show Sonnet/API Usage Billing; CCR logs confirm the actual route.");
+  }
+
+  const child = spawn("ccr", ["code", ...args], {
     stdio: "inherit",
     env,
     shell: process.platform === "win32",

@@ -99,6 +99,8 @@ claude-gpt
 claude-gpt -p "Reply with exactly: ok"
 ```
 
+Claude Code's TUI may still display its Anthropic-facing model alias, such as `Sonnet 4.6`, and `API Usage Billing`. That is normal for this bridge: Claude Code still speaks Anthropic-shaped requests to CCR, and CCR routes them to ChatGPT/Codex OAuth upstream. Verify routing with CCR logs or a `claude-gpt -p` smoke test.
+
 Direct work Claude route:
 
 ```bash
