@@ -299,7 +299,9 @@ function compressMcpTools(tools, options = {}) {
       type: "function",
       name: `mcp_dispatch__${sanitizeToolName(server)}`,
       description:
-        `Dispatch to one ${server} MCP tool. Choose the exact original tool name and provide its input JSON. ` +
+        `Dispatch to one ${server} MCP tool. Choose the exact original tool name and provide input_json as a JSON object string for that tool. ` +
+        `Do not leave input_json empty when required fields are listed. Example: ` +
+        `{"name":"mcp__${server}__some_tool","input_json":"{\\"project\\":\\"CIC Backlog\\"}"}. ` +
         `Available tools:\n${details}`,
       parameters: {
         type: "object",
@@ -309,13 +311,13 @@ function compressMcpTools(tools, options = {}) {
             enum: names,
             description: "Exact original MCP tool name to call.",
           },
-          input: {
-            type: "object",
-            description: "Input object for the selected MCP tool.",
-            additionalProperties: true,
+          input_json: {
+            type: "string",
+            description:
+              "JSON object string containing the exact input for the selected MCP tool, including every required field listed in the tool summary.",
           },
         },
-        required: ["name", "input"],
+        required: ["name", "input_json"],
         additionalProperties: false,
       },
     });
@@ -499,6 +501,26 @@ function finishReasonFromState(state) {
   return state.finishReason || "stop";
 }
 
+function parseDispatchInput(parsed) {
+  if (typeof parsed?.input_json === "string") {
+    try {
+      const input = JSON.parse(parsed.input_json || "{}");
+      return input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof parsed?.arguments_json === "string") {
+    try {
+      const input = JSON.parse(parsed.arguments_json || "{}");
+      return input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    } catch {
+      return {};
+    }
+  }
+  return parsed?.input && typeof parsed.input === "object" && !Array.isArray(parsed.input) ? parsed.input : {};
+}
+
 function mapMcpDispatchCall(name, argumentsText) {
   if (!isMcpDispatchName(name)) return { name, argumentsText };
   try {
@@ -506,7 +528,7 @@ function mapMcpDispatchCall(name, argumentsText) {
     if (typeof parsed.name === "string" && parsed.name.startsWith("mcp__")) {
       return {
         name: parsed.name,
-        argumentsText: JSON.stringify(parsed.input && typeof parsed.input === "object" ? parsed.input : {}),
+        argumentsText: JSON.stringify(parseDispatchInput(parsed)),
       };
     }
   } catch {}
