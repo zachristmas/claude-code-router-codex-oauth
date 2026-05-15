@@ -14,6 +14,9 @@
       "path": "<HOME>/.claude-code-router/plugins/codex-oauth.js",
       "options": {
         "authFile": "<HOME>/.claude-code-router/codex-auth.json",
+        "settingsFile": "<HOME>/.claude-code-router/codex-settings.json",
+        "defaultModel": "gpt-5.5",
+        "defaultReasoningEffort": "xhigh",
         "originator": "claude-code-router"
       }
     }
@@ -37,8 +40,8 @@
     }
   ],
   "Router": {
-    "default": "openai-codex,gpt-5.4",
-    "background": "openai-codex,gpt-5.4-mini",
+    "default": "openai-codex,gpt-5.5",
+    "background": "openai-codex,gpt-5.5",
     "think": "openai-codex,gpt-5.5",
     "longContext": "openai-codex,gpt-5.5",
     "longContextThreshold": 120000

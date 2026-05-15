@@ -10,6 +10,7 @@ const ROOT = path.resolve(__dirname, "..");
 const CCR_DIR = process.env.CCR_DIR || path.join(os.homedir(), ".claude-code-router");
 const BIN_DIR = process.env.BIN_DIR || path.join(os.homedir(), ".local", "bin");
 const AUTH_FILE = process.env.CODEX_OAUTH_AUTH_FILE || path.join(CCR_DIR, "codex-auth.json");
+const SETTINGS_FILE = process.env.CODEX_OAUTH_SETTINGS_FILE || path.join(CCR_DIR, "codex-settings.json");
 const APIKEY = process.env.CCR_APIKEY || "sk-ccr-local";
 const HOST = process.env.CCR_HOST || "127.0.0.1";
 const PORT = Number(process.env.CCR_PORT || 3456);
@@ -58,6 +59,7 @@ function installLaunchers() {
     ["claude-gpt", "claude-gpt.js"],
     ["claude-work", "claude-work.js"],
     ["claude-gpt-auth", "claude-gpt-auth.js"],
+    ["claude-gpt-settings", "claude-gpt-settings.js"],
   ];
 
   for (const [name, file] of entries) {
@@ -70,6 +72,24 @@ function installLaunchers() {
       copy(src, path.join(BIN_DIR, name), 0o755);
     }
   }
+}
+
+function writeDefaultSettings() {
+  if (fs.existsSync(SETTINGS_FILE)) return;
+  fs.writeFileSync(
+    SETTINGS_FILE,
+    JSON.stringify({ model: "gpt-5.5", reasoningEffort: "xhigh" }, null, 2) + "\n",
+    { mode: 0o600 },
+  );
+  try {
+    fs.chmodSync(SETTINGS_FILE, 0o600);
+  } catch {}
+}
+
+function installClaudeCommands() {
+  const commandsDir = path.join(os.homedir(), ".claude", "commands");
+  mkdir(commandsDir, 0o700);
+  copy(path.join(ROOT, "commands", "gpt-settings.md"), path.join(commandsDir, "gpt-settings.md"), 0o644);
 }
 
 function writeConfig() {
@@ -97,6 +117,9 @@ function writeConfig() {
         path: path.join(CCR_DIR, "plugins", "codex-oauth.js"),
         options: {
           authFile: AUTH_FILE,
+          settingsFile: SETTINGS_FILE,
+          defaultModel: "gpt-5.5",
+          defaultReasoningEffort: "xhigh",
           originator: "claude-code-router",
         },
       },
@@ -111,8 +134,8 @@ function writeConfig() {
       },
     ],
     Router: {
-      default: "openai-codex,gpt-5.4",
-      background: "openai-codex,gpt-5.4-mini",
+      default: "openai-codex,gpt-5.5",
+      background: "openai-codex,gpt-5.5",
       think: "openai-codex,gpt-5.5",
       longContext: "openai-codex,gpt-5.5",
       longContextThreshold: 120000,
@@ -154,6 +177,8 @@ function main() {
 
   copy(path.join(ROOT, "plugins", "codex-oauth.js"), path.join(CCR_DIR, "plugins", "codex-oauth.js"), 0o644);
   installLaunchers();
+  installClaudeCommands();
+  writeDefaultSettings();
   writeConfig();
 
   if (!fs.existsSync(AUTH_FILE)) {

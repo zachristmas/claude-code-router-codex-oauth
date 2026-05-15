@@ -7,6 +7,8 @@ const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 
 const AUTH_FILE = process.env.CODEX_OAUTH_AUTH_FILE || path.join(os.homedir(), ".claude-code-router", "codex-auth.json");
+const SETTINGS_FILE = process.env.CODEX_OAUTH_SETTINGS_FILE || path.join(os.homedir(), ".claude-code-router", "codex-settings.json");
+const DEFAULT_MODEL = "gpt-5.5";
 
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
@@ -73,6 +75,21 @@ function shouldShowInteractiveBanner(args) {
   return !args.some((arg) => arg === "-p" || arg === "--print" || arg.startsWith("--print="));
 }
 
+function settingsModel() {
+  const settings = readJson(SETTINGS_FILE) || {};
+  const model = process.env.CLAUDE_GPT_MODEL || settings.model || DEFAULT_MODEL;
+  return String(model).includes(",") ? String(model).split(",").pop().trim() : String(model).trim();
+}
+
+function hasModelArg(args) {
+  return args.some((arg) => arg === "--model" || arg.startsWith("--model="));
+}
+
+function withDefaultModel(args) {
+  if (hasModelArg(args)) return args;
+  return ["--model", `openai-codex,${settingsModel()}`, ...args];
+}
+
 function main() {
   if (!fs.existsSync(AUTH_FILE)) {
     const auth = loadOpenCodeAuth();
@@ -99,10 +116,11 @@ function main() {
   const env = { ...process.env };
   env.NODE_OPTIONS = appendNodeOption(env, "--no-deprecation");
 
-  const args = process.argv.slice(2);
+  const args = withDefaultModel(process.argv.slice(2));
   if (shouldShowInteractiveBanner(args)) {
-    console.error("claude-gpt: routing Claude Code through CCR -> ChatGPT/Codex OAuth (default upstream: gpt-5.4).");
-    console.error("claude-gpt: Claude Code's UI may still show Sonnet/API Usage Billing; CCR logs confirm the actual route.");
+    const settings = readJson(SETTINGS_FILE) || {};
+    console.error(`claude-gpt: routing Claude Code through CCR -> ChatGPT/Codex OAuth (${settingsModel()} ${settings.reasoningEffort || "xhigh"}).`);
+    console.error("claude-gpt: use /gpt-settings inside Claude Code, or run claude-gpt-settings, to tweak model/effort.");
   }
 
   const child = spawn("ccr", ["code", ...args], {

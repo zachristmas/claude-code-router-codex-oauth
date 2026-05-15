@@ -16,6 +16,7 @@ const ISSUER = "https://auth.openai.com";
 const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses";
 const DUMMY_KEY = "opencode-oauth-dummy-key";
 const DEFAULT_AUTH_FILE = path.join(os.homedir(), ".claude-code-router", "codex-auth.json");
+const DEFAULT_SETTINGS_FILE = path.join(os.homedir(), ".claude-code-router", "codex-settings.json");
 
 function expandHome(value) {
   if (!value) return value;
@@ -122,6 +123,21 @@ function loadAuthFromFile(file) {
   }
 
   return undefined;
+}
+
+function normalizeModelId(model) {
+  if (!model || typeof model !== "string") return undefined;
+  return model.includes(",") ? model.split(",").pop().trim() : model.trim();
+}
+
+function loadCodexSettings(options = {}) {
+  const settingsFile = expandHome(options.settingsFile || process.env.CODEX_OAUTH_SETTINGS_FILE || DEFAULT_SETTINGS_FILE);
+  const settings = readJson(settingsFile) || {};
+  return {
+    model: normalizeModelId(settings.model || options.model || options.defaultModel),
+    reasoningEffort: settings.reasoningEffort || settings.effort || options.reasoningEffort || options.defaultReasoningEffort,
+    settingsFile,
+  };
 }
 
 function saveAuth(loaded, auth) {
@@ -247,7 +263,7 @@ function toolChoiceToResponses(toolChoice) {
   return undefined;
 }
 
-function chatToResponses(body) {
+function chatToResponses(body, options = {}) {
   const instructions = [];
   const input = [];
 
@@ -291,7 +307,7 @@ function chatToResponses(body) {
   }
 
   const request = {
-    model: body.model,
+    model: normalizeModelId(options.model) || normalizeModelId(body.model),
     instructions: instructions.join("\n\n") || "You are a concise coding assistant.",
     input,
     stream: true,
@@ -305,7 +321,7 @@ function chatToResponses(body) {
   const toolChoice = toolChoiceToResponses(body.tool_choice);
   if (toolChoice) request.tool_choice = toolChoice;
 
-  const effort = body.reasoning?.effort;
+  const effort = options.reasoningEffort || options.defaultReasoningEffort || body.reasoning?.effort || body.reasoningEffort || body.reasoning_effort;
   if (effort && effort !== "none") request.reasoning = { effort };
 
   // The ChatGPT Codex endpoint currently rejects max_output_tokens and requires streaming.
@@ -585,7 +601,8 @@ class CodexOAuthTransformer {
 
   async transformRequestIn(body, provider, ctx) {
     const auth = await loadCodexAuth(this.options);
-    const requestBody = chatToResponses(body);
+    const settings = loadCodexSettings(this.options);
+    const requestBody = chatToResponses(body, { ...this.options, ...settings });
     const headers = {
       Authorization: `Bearer ${auth.access}`,
       "Content-Type": "application/json",
@@ -630,6 +647,7 @@ class CodexOAuthTransformer {
 CodexOAuthTransformer.loadCodexAuth = loadCodexAuth;
 CodexOAuthTransformer.chatToResponses = chatToResponses;
 CodexOAuthTransformer.responsesStreamToChatJson = responsesStreamToChatJson;
+CodexOAuthTransformer.loadCodexSettings = loadCodexSettings;
 
 module.exports = CodexOAuthTransformer;
 
