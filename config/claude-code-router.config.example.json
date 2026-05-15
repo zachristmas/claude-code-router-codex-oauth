@@ -1,0 +1,43 @@
+{
+  "APIKEY": "sk-ccr-local",
+  "HOST": "127.0.0.1",
+  "PORT": 3456,
+  "LOG": true,
+  "LOG_LEVEL": "info",
+  "API_TIMEOUT_MS": 600000,
+  "NON_INTERACTIVE_MODE": false,
+  "transformers": [
+    {
+      "path": "<HOME>/.claude-code-router/plugins/codex-oauth.js",
+      "options": {
+        "authFile": "<HOME>/.claude-code-router/codex-auth.json",
+        "originator": "claude-code-router"
+      }
+    }
+  ],
+  "Providers": [
+    {
+      "name": "openai-codex",
+      "api_base_url": "https://chatgpt.com/backend-api/codex/responses",
+      "api_key": "opencode-oauth-dummy-key",
+      "models": [
+        "gpt-5.5",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-spark",
+        "gpt-5.2"
+      ],
+      "transformer": {
+        "use": ["codex-oauth"]
+      }
+    }
+  ],
+  "Router": {
+    "default": "openai-codex,gpt-5.4",
+    "background": "openai-codex,gpt-5.4-mini",
+    "think": "openai-codex,gpt-5.5",
+    "longContext": "openai-codex,gpt-5.5",
+    "longContextThreshold": 120000
+  }
+}

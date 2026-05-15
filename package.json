@@ -1,0 +1,39 @@
+{
+  "name": "claude-code-router-codex-oauth",
+  "version": "0.1.0",
+  "description": "Use Claude Code through Claude Code Router with ChatGPT/Codex OAuth subscription quota.",
+  "license": "MIT",
+  "author": "Zach Christmas",
+  "type": "commonjs",
+  "bin": {
+    "claude-gpt": "bin/claude-gpt.js",
+    "claude-work": "bin/claude-work.js",
+    "claude-gpt-auth": "bin/claude-gpt-auth.js",
+    "ccr-codex-oauth-install": "scripts/install.js"
+  },
+  "scripts": {
+    "install:local": "node scripts/install.js",
+    "self-test": "node plugins/codex-oauth.js gpt-5.4-mini",
+    "check": "node --check plugins/codex-oauth.js && node --check bin/claude-gpt.js && node --check bin/claude-work.js && node --check bin/claude-gpt-auth.js && node --check scripts/install.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin/",
+    "plugins/",
+    "scripts/",
+    "config/",
+    "install.sh",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "keywords": [
+    "claude-code",
+    "claude-code-router",
+    "codex",
+    "chatgpt",
+    "oauth"
+  ]
+}

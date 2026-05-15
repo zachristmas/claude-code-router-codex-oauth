@@ -1,0 +1,28 @@
+# Dependencies/build
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tgz
+
+# Local credentials/secrets
+codex-auth.json
+auth.json
+*.secret
+*.token
+.env
+.env.*
+!.env.example
+
+# Local CCR/runtime state
+.claude-code-router/
+logs/
+*.log
+*.pid
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
