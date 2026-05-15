@@ -326,27 +326,59 @@ function compressMcpTools(tools, options = {}) {
   return passthrough;
 }
 
+function cloneJson(value) {
+  if (!value || typeof value !== "object") return value;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
+function sanitizeToolForResponses(tool) {
+  const sanitized = {
+    ...tool,
+    parameters: cloneJson(tool.parameters || { type: "object", properties: {} }),
+  };
+
+  // Claude Code's Read tool exposes an optional PDF-only `pages` string. Codex tends to
+  // fill optional strings as `""`, which Claude Code rejects for non-PDF reads. Hide it
+  // upstream and scrub it again on the way back for safety.
+  if (sanitized.name === "Read" && sanitized.parameters?.properties?.pages) {
+    delete sanitized.parameters.properties.pages;
+    if (Array.isArray(sanitized.parameters.required)) {
+      sanitized.parameters.required = sanitized.parameters.required.filter((name) => name !== "pages");
+    }
+  }
+
+  return sanitized;
+}
+
 function chatToolsToResponses(tools, options = {}) {
   if (!Array.isArray(tools)) return undefined;
   const converted = [];
   for (const tool of tools) {
     if (!tool) continue;
     if (tool.type === "function" && tool.function?.name) {
-      converted.push({
-        type: "function",
-        name: tool.function.name,
-        description: tool.function.description || "",
-        parameters: tool.function.parameters || { type: "object", properties: {} },
-      });
+      converted.push(
+        sanitizeToolForResponses({
+          type: "function",
+          name: tool.function.name,
+          description: tool.function.description || "",
+          parameters: tool.function.parameters || { type: "object", properties: {} },
+        }),
+      );
       continue;
     }
     if (tool.name) {
-      converted.push({
-        type: "function",
-        name: tool.name,
-        description: tool.description || "",
-        parameters: tool.parameters || tool.input_schema || { type: "object", properties: {} },
-      });
+      converted.push(
+        sanitizeToolForResponses({
+          type: "function",
+          name: tool.name,
+          description: tool.description || "",
+          parameters: tool.parameters || tool.input_schema || { type: "object", properties: {} },
+        }),
+      );
     }
   }
   const compressed = compressMcpTools(converted, options);
@@ -521,6 +553,21 @@ function parseDispatchInput(parsed) {
   return parsed?.input && typeof parsed.input === "object" && !Array.isArray(parsed.input) ? parsed.input : {};
 }
 
+function scrubToolArguments(name, argumentsText) {
+  try {
+    const parsed = JSON.parse(argumentsText || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return argumentsText;
+
+    if (name === "Read") {
+      if (parsed.pages === "" || parsed.pages === null) delete parsed.pages;
+    }
+
+    return JSON.stringify(parsed);
+  } catch {
+    return argumentsText;
+  }
+}
+
 function mapMcpDispatchCall(name, argumentsText) {
   if (!isMcpDispatchName(name)) return { name, argumentsText };
   try {
@@ -533,6 +580,14 @@ function mapMcpDispatchCall(name, argumentsText) {
     }
   } catch {}
   return { name, argumentsText };
+}
+
+function mapToolCall(name, argumentsText) {
+  const mapped = mapMcpDispatchCall(name, argumentsText);
+  return {
+    name: mapped.name,
+    argumentsText: scrubToolArguments(mapped.name, mapped.argumentsText),
+  };
 }
 
 function updateStateFromEvent(state, payload) {
@@ -551,6 +606,31 @@ function responsesStreamToChatStream(readable, logger) {
   const encoder = new TextEncoder();
   const state = { toolCalls: new Map(), text: "", usage: undefined, finished: false };
   const emit = (controller, value) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(value)}\n\n`));
+  const emitToolCall = (controller, index, call) => {
+    if (!call || call.emitted) return;
+    const mapped = mapToolCall(call.name, call.arguments);
+    call.name = mapped.name;
+    call.arguments = mapped.argumentsText;
+    call.emitted = true;
+    emit(
+      controller,
+      createChatChunk(state, {
+        tool_calls: [
+          {
+            index,
+            id: call.id,
+            type: "function",
+            function: { name: call.name, arguments: call.arguments },
+          },
+        ],
+      }),
+    );
+  };
+  const emitPendingToolCalls = (controller) => {
+    for (const [index, call] of Array.from(state.toolCalls.entries()).sort((a, b) => a[0] - b[0])) {
+      emitToolCall(controller, index, call);
+    }
+  };
 
   return new ReadableStream({
     async start(controller) {
@@ -575,77 +655,27 @@ function responsesStreamToChatStream(readable, logger) {
               const item = payload.item;
               if (item?.type === "function_call") {
                 const index = payload.output_index ?? state.toolCalls.size;
-                const suppressed = isMcpDispatchName(item.name);
                 state.toolCalls.set(index, {
                   id: item.call_id,
                   name: item.name,
                   arguments: "",
-                  suppressed,
                   emitted: false,
                 });
-                if (!suppressed) {
-                  emit(
-                    controller,
-                    createChatChunk(state, {
-                      tool_calls: [
-                        {
-                          index,
-                          id: item.call_id,
-                          type: "function",
-                          function: { name: item.name, arguments: "" },
-                        },
-                      ],
-                    }),
-                  );
-                }
               }
               break;
             }
             case "response.function_call_arguments.delta": {
               const index = payload.output_index ?? 0;
-              const call = state.toolCalls.get(index) || { id: payload.item_id, name: "tool", arguments: "" };
+              const call = state.toolCalls.get(index) || { id: payload.item_id, name: "tool", arguments: "", emitted: false };
               call.arguments += payload.delta || "";
               state.toolCalls.set(index, call);
-              if (!call.suppressed) {
-                emit(
-                  controller,
-                  createChatChunk(state, {
-                    tool_calls: [
-                      {
-                        index,
-                        id: call.id,
-                        type: "function",
-                        function: { name: call.name, arguments: payload.delta || "" },
-                      },
-                    ],
-                  }),
-                );
-              }
               break;
             }
             case "response.function_call_arguments.done": {
               const index = payload.output_index ?? 0;
               const call = state.toolCalls.get(index);
               if (call && payload.arguments) call.arguments = payload.arguments;
-              if (call?.suppressed && !call.emitted) {
-                const mapped = mapMcpDispatchCall(call.name, call.arguments);
-                call.name = mapped.name;
-                call.arguments = mapped.argumentsText;
-                call.emitted = true;
-                emit(
-                  controller,
-                  createChatChunk(state, {
-                    tool_calls: [
-                      {
-                        index,
-                        id: call.id,
-                        type: "function",
-                        function: { name: call.name, arguments: call.arguments },
-                      },
-                    ],
-                  }),
-                );
-              }
+              emitToolCall(controller, index, call);
               break;
             }
             case "response.reasoning_summary_text.delta": {
@@ -654,6 +684,7 @@ function responsesStreamToChatStream(readable, logger) {
             }
             case "response.completed": {
               state.finished = true;
+              emitPendingToolCalls(controller);
               emit(controller, createChatChunk(state, {}, finishReasonFromState(state), state.usage));
               controller.enqueue(encoder.encode("data: [DONE]\n\n"));
               controller.close();
@@ -670,6 +701,7 @@ function responsesStreamToChatStream(readable, logger) {
         }
 
         if (!state.finished) {
+          emitPendingToolCalls(controller);
           emit(controller, createChatChunk(state, {}, finishReasonFromState(state), state.usage));
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
@@ -732,7 +764,7 @@ async function responsesStreamToChatJson(readable) {
     .sort((a, b) => a - b)
     .map((key) => {
       const call = state.toolCalls.get(key);
-      const mapped = mapMcpDispatchCall(call.function.name, call.function.arguments);
+      const mapped = mapToolCall(call.function.name, call.function.arguments);
       return {
         ...call,
         function: {
