@@ -64,11 +64,56 @@ function loadOpenCodeAuth() {
   }
 }
 
-function commandExists(command) {
+function executableName(command) {
+  return process.platform === "win32" && !command.toLowerCase().endsWith(".cmd") && !command.toLowerCase().endsWith(".exe")
+    ? `${command}.cmd`
+    : command;
+}
+
+function voltaNodeBinCandidates(command) {
+  const base = path.join(os.homedir(), ".volta", "tools", "image", "node");
+  try {
+    return fs
+      .readdirSync(base)
+      .map((version) => path.join(base, version, "bin", executableName(command)))
+      .filter((file) => fs.existsSync(file));
+  } catch {
+    return [];
+  }
+}
+
+function commandPath(command) {
   const result = process.platform === "win32"
-    ? spawnSync("where", [command], { stdio: "ignore", windowsHide: true })
-    : spawnSync("sh", ["-c", `command -v ${command}`], { stdio: "ignore" });
-  return !result.error && result.status === 0;
+    ? spawnSync("where", [command], { encoding: "utf8", windowsHide: true })
+    : spawnSync("sh", ["-c", `command -v ${command}`], { encoding: "utf8" });
+  if (!result.error && result.status === 0) return result.stdout.split(/\r?\n/).find(Boolean)?.trim();
+}
+
+function resolveCommand(command, extraCandidates = []) {
+  const fromPath = commandPath(command);
+  if (fromPath) return fromPath;
+
+  const candidates = unique([
+    ...extraCandidates,
+    path.join(os.homedir(), ".volta", "bin", executableName(command)),
+    path.join(os.homedir(), ".local", "bin", executableName(command)),
+    ...voltaNodeBinCandidates(command),
+  ]);
+
+  return candidates.find((file) => {
+    try {
+      return fs.existsSync(file) && fs.statSync(file).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function prependPath(env, dirs) {
+  const delimiter = path.delimiter;
+  const current = env.PATH || "";
+  const parts = unique([...dirs.filter(Boolean), ...current.split(delimiter).filter(Boolean)]);
+  env.PATH = parts.join(delimiter);
 }
 
 function appendNodeOption(env, option) {
@@ -171,17 +216,20 @@ async function main() {
     }
   }
 
-  if (!commandExists("ccr")) {
-    console.error("claude-code-router (ccr) is not on PATH. Install: npm install -g @musistudio/claude-code-router");
+  const ccrCommand = resolveCommand("ccr", [process.env.CCR_BIN, process.env.CLAUDE_CODE_ROUTER_BIN]);
+  if (!ccrCommand) {
+    console.error("claude-code-router (ccr) was not found. Install: npm install -g @musistudio/claude-code-router");
     process.exit(1);
   }
 
-  if (!commandExists("claude")) {
-    console.error("claude is not on PATH. Install Claude Code first.");
+  const claudeCommand = resolveCommand("claude", [process.env.CLAUDE_BIN, process.env.CLAUDE_CODE_BIN]);
+  if (!claudeCommand) {
+    console.error("claude was not found. Install Claude Code first.");
     process.exit(1);
   }
 
   const env = { ...process.env };
+  prependPath(env, [path.dirname(ccrCommand), path.dirname(claudeCommand), path.join(os.homedir(), ".volta", "bin")]);
   env.NODE_OPTIONS = appendNodeOption(env, "--no-deprecation");
 
   const parsed = parseWrapperFlags(process.argv.slice(2));
@@ -189,7 +237,7 @@ async function main() {
   const args = withMcpPolicy(withLaunchModel(parsed.args), parsed);
   await showStartupBanner(args, mcpMode);
 
-  const child = spawn("ccr", ["code", ...args], {
+  const child = spawn(ccrCommand, ["code", ...args], {
     stdio: "inherit",
     env,
     shell: process.platform === "win32",
