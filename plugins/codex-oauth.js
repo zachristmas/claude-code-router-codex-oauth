@@ -562,6 +562,23 @@ function scrubToolArguments(name, argumentsText) {
       if (parsed.pages === "" || parsed.pages === null) delete parsed.pages;
     }
 
+    if (name === "EnterWorktree") {
+      if (parsed.name === "" || parsed.name === null) delete parsed.name;
+      if (parsed.path === "" || parsed.path === null) delete parsed.path;
+
+      // Codex sometimes puts an existing absolute path in `name`, or invents a
+      // filler `name` while also providing `path`. Claude Code requires at most
+      // one of them. Prefer an explicit path because it enters the intended
+      // existing worktree instead of creating a new one.
+      if (typeof parsed.name === "string" && parsed.name.startsWith("/") && parsed.path === undefined) {
+        parsed.path = parsed.name;
+        delete parsed.name;
+      }
+      if (typeof parsed.path === "string" && parsed.path !== "") {
+        delete parsed.name;
+      }
+    }
+
     return JSON.stringify(parsed);
   } catch {
     return argumentsText;
