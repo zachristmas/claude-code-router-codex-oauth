@@ -1,12 +1,4 @@
-// Claude Code Router transformer: OpenAI Codex OAuth via ChatGPT subscription.
-//
-// This transformer adapts CCR's OpenAI Chat Completions-shaped request body
-// into the ChatGPT Codex Responses endpoint used by OpenCode/Codex OAuth.
-// It uses local OAuth credentials from ~/.claude-code-router/codex-auth.json,
-// falling back to common OpenCode auth.json locations when present.
-//
-// No tokens are logged or printed.
-
+/** @file CCR transformer for Codex OAuth. */
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -18,6 +10,10 @@ const DUMMY_KEY = "opencode-oauth-dummy-key";
 const DEFAULT_AUTH_FILE = path.join(os.homedir(), ".claude-code-router", "codex-auth.json");
 const DEFAULT_SETTINGS_FILE = path.join(os.homedir(), ".claude-code-router", "codex-settings.json");
 
+/**
+ * @param {string|undefined} value
+ * @returns {string|undefined}
+ */
 function expandHome(value) {
   if (!value) return value;
   if (value === "~") return os.homedir();
@@ -25,10 +21,16 @@ function expandHome(value) {
   return value;
 }
 
+/**
+ * @template T
+ * @param {T[]} values
+ * @returns {T[]}
+ */
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+/** @returns {string[]} */
 function opencodeAuthCandidates() {
   const home = os.homedir();
   return unique([
@@ -43,6 +45,10 @@ function opencodeAuthCandidates() {
   ]).map(expandHome);
 }
 
+/**
+ * @param {string} file
+ * @returns {object|undefined}
+ */
 function readJson(file) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -51,6 +57,11 @@ function readJson(file) {
   }
 }
 
+/**
+ * @param {string} file
+ * @param {*} value
+ * @returns {void}
+ */
 function writeJson0600(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
@@ -59,6 +70,10 @@ function writeJson0600(file, value) {
   } catch {}
 }
 
+/**
+ * @param {string|undefined} token
+ * @returns {object|undefined}
+ */
 function parseJwtClaims(token) {
   const parts = String(token || "").split(".");
   if (parts.length !== 3) return undefined;
@@ -69,6 +84,10 @@ function parseJwtClaims(token) {
   }
 }
 
+/**
+ * @param {object|undefined} claims
+ * @returns {string|undefined}
+ */
 function extractAccountIdFromClaims(claims) {
   return (
     claims?.chatgpt_account_id ||
@@ -77,12 +96,20 @@ function extractAccountIdFromClaims(claims) {
   );
 }
 
+/**
+ * @param {object} tokens
+ * @returns {string|undefined}
+ */
 function extractAccountId(tokens) {
   const idClaims = parseJwtClaims(tokens.id_token);
   const accessClaims = parseJwtClaims(tokens.access_token);
   return extractAccountIdFromClaims(idClaims) || extractAccountIdFromClaims(accessClaims);
 }
 
+/**
+ * @param {string} refreshToken
+ * @returns {Promise<object>}
+ */
 async function refreshAccessToken(refreshToken) {
   const response = await fetch(`${ISSUER}/oauth/token`, {
     method: "POST",
@@ -99,37 +126,45 @@ async function refreshAccessToken(refreshToken) {
   return response.json();
 }
 
+/**
+ * @param {string} file
+ * @returns {object|undefined}
+ */
 function loadAuthFromFile(file) {
   const raw = readJson(file);
   if (!raw || typeof raw !== "object") return undefined;
-
-  // Native bridge auth shape.
   if (raw.type === "oauth" && raw.access && raw.refresh) {
     return { file, format: "native", auth: raw };
   }
-
-  // OpenCode legacy auth shape: { openai: { type: "oauth", ... } }
   if (raw.openai?.type === "oauth" && raw.openai.access && raw.openai.refresh) {
     return { file, format: "opencode-v1", auth: raw.openai, raw };
   }
-
-  // OpenCode v2 shape, if present: { version: 2, accounts, active }.
   if (raw.version === 2 && raw.accounts && raw.active) {
     const activeId = raw.active.openai;
-    const account = activeId ? raw.accounts[activeId] : Object.values(raw.accounts).find((entry) => entry.serviceID === "openai");
-    if (account?.credential?.type === "oauth") {
-      return { file, format: "opencode-v2", auth: account.credential, raw, accountId: account.id };
+    const entry = activeId && raw.accounts[activeId]
+      ? [activeId, raw.accounts[activeId]]
+      : Object.entries(raw.accounts).find(([, account]) => account.serviceID === "openai");
+    if (entry?.[1]?.credential?.type === "oauth") {
+      return { file, format: "opencode-v2", auth: entry[1].credential, raw, accountId: entry[1].id || entry[0], accountKey: entry[0] };
     }
   }
 
   return undefined;
 }
 
+/**
+ * @param {string|undefined} model
+ * @returns {string|undefined}
+ */
 function normalizeModelId(model) {
   if (!model || typeof model !== "string") return undefined;
   return model.includes(",") ? model.split(",").pop().trim() : model.trim();
 }
 
+/**
+ * @param {object} [options]
+ * @returns {{model: string|undefined, reasoningEffort: string|undefined, settingsFile: string}}
+ */
 function loadCodexSettings(options = {}) {
   const settingsFile = expandHome(options.settingsFile || process.env.CODEX_OAUTH_SETTINGS_FILE || DEFAULT_SETTINGS_FILE);
   const settings = readJson(settingsFile) || {};
@@ -146,6 +181,11 @@ function loadCodexSettings(options = {}) {
   };
 }
 
+/**
+ * @param {object} loaded
+ * @param {object} auth
+ * @returns {void}
+ */
 function saveAuth(loaded, auth) {
   if (loaded.format === "native") {
     writeJson0600(loaded.file, auth);
@@ -158,12 +198,16 @@ function saveAuth(loaded, auth) {
   }
   if (loaded.format === "opencode-v2") {
     const raw = loaded.raw;
-    const account = raw.accounts?.[loaded.accountId];
+    const account = raw.accounts?.[loaded.accountKey || loaded.accountId];
     if (account) account.credential = { ...account.credential, ...auth };
     writeJson0600(loaded.file, raw);
   }
 }
 
+/**
+ * @param {object} [options]
+ * @returns {Promise<object>}
+ */
 async function loadCodexAuth(options = {}) {
   const authFile = expandHome(options.authFile || process.env.CODEX_OAUTH_AUTH_FILE || DEFAULT_AUTH_FILE);
   const checked = [authFile, ...opencodeAuthCandidates()];
@@ -179,6 +223,7 @@ async function loadCodexAuth(options = {}) {
   }
 
   const auth = { ...loaded.auth };
+  auth.accountId ||= loaded.accountId || extractAccountId(auth);
   const refreshSkewMs = Number(options.refreshSkewMs ?? 60_000);
   if (!auth.access || !auth.expires || Number(auth.expires) < Date.now() + refreshSkewMs) {
     const tokens = await refreshAccessToken(auth.refresh);
@@ -191,6 +236,10 @@ async function loadCodexAuth(options = {}) {
   return auth;
 }
 
+/**
+ * @param {*} content
+ * @returns {string}
+ */
 function textFromContent(content) {
   if (content == null) return "";
   if (typeof content === "string") return content;
@@ -209,6 +258,10 @@ function textFromContent(content) {
   return JSON.stringify(content);
 }
 
+/**
+ * @param {*} content
+ * @returns {object[]}
+ */
 function userContentToResponses(content) {
   if (typeof content === "string") return [{ type: "input_text", text: content }];
   if (!Array.isArray(content)) return [{ type: "input_text", text: textFromContent(content) }];
@@ -234,20 +287,36 @@ function userContentToResponses(content) {
   return parts.length ? parts : [{ type: "input_text", text: "" }];
 }
 
+/**
+ * @param {string} name
+ * @returns {{server: string, operation: string}|undefined}
+ */
 function mcpToolParts(name) {
   const match = String(name || "").match(/^mcp__(.+?)__(.+)$/);
   if (!match) return undefined;
   return { server: match[1], operation: match[2] };
 }
 
+/**
+ * @param {*} value
+ * @returns {string}
+ */
 function sanitizeToolName(value) {
   return String(value || "tool").replace(/[^A-Za-z0-9_]/g, "_").slice(0, 48);
 }
 
+/**
+ * @param {string} name
+ * @returns {boolean}
+ */
 function isMcpDispatchName(name) {
   return /^mcp_dispatch__[A-Za-z0-9_]+$/.test(String(name || ""));
 }
 
+/**
+ * @param {object} [schema]
+ * @returns {string}
+ */
 function summarizeSchema(schema = {}) {
   const props = schema.properties && typeof schema.properties === "object" ? schema.properties : {};
   const required = Array.isArray(schema.required) ? schema.required : [];
@@ -262,12 +331,21 @@ function summarizeSchema(schema = {}) {
   return `required=[${required.join(",")}] props={${propText}${Object.keys(props).length > names.length ? ",…" : ""}}`;
 }
 
+/**
+ * @param {object} [options]
+ * @returns {boolean}
+ */
 function shouldCompressMcpTools(options = {}) {
   const env = process.env.CLAUDE_GPT_COMPRESS_MCP;
   if (env && ["0", "false", "off", "no"].includes(env.toLowerCase())) return false;
   return options.compressMcpTools !== false;
 }
 
+/**
+ * @param {object[]} tools
+ * @param {object} [options]
+ * @returns {object[]}
+ */
 function compressMcpTools(tools, options = {}) {
   if (!shouldCompressMcpTools(options)) return tools;
   const minTools = Number(options.compressMcpMinTools ?? process.env.CLAUDE_GPT_COMPRESS_MCP_MIN_TOOLS ?? 4);
@@ -326,6 +404,10 @@ function compressMcpTools(tools, options = {}) {
   return passthrough;
 }
 
+/**
+ * @param {*} value
+ * @returns {*}
+ */
 function cloneJson(value) {
   if (!value || typeof value !== "object") return value;
   try {
@@ -335,15 +417,15 @@ function cloneJson(value) {
   }
 }
 
+/**
+ * @param {object} tool
+ * @returns {object}
+ */
 function sanitizeToolForResponses(tool) {
   const sanitized = {
     ...tool,
     parameters: cloneJson(tool.parameters || { type: "object", properties: {} }),
   };
-
-  // Claude Code's Read tool exposes an optional PDF-only `pages` string. Codex tends to
-  // fill optional strings as `""`, which Claude Code rejects for non-PDF reads. Hide it
-  // upstream and scrub it again on the way back for safety.
   if (sanitized.name === "Read" && sanitized.parameters?.properties?.pages) {
     delete sanitized.parameters.properties.pages;
     if (Array.isArray(sanitized.parameters.required)) {
@@ -354,6 +436,11 @@ function sanitizeToolForResponses(tool) {
   return sanitized;
 }
 
+/**
+ * @param {object[]|undefined} tools
+ * @param {object} [options]
+ * @returns {object[]|undefined}
+ */
 function chatToolsToResponses(tools, options = {}) {
   if (!Array.isArray(tools)) return undefined;
   const converted = [];
@@ -385,6 +472,10 @@ function chatToolsToResponses(tools, options = {}) {
   return compressed.length ? compressed : undefined;
 }
 
+/**
+ * @param {*} toolChoice
+ * @returns {*|undefined}
+ */
 function toolChoiceToResponses(toolChoice) {
   if (!toolChoice) return undefined;
   if (typeof toolChoice === "string") return toolChoice;
@@ -394,6 +485,11 @@ function toolChoiceToResponses(toolChoice) {
   return undefined;
 }
 
+/**
+ * @param {object} body
+ * @param {object} [options]
+ * @returns {object}
+ */
 function chatToResponses(body, options = {}) {
   const instructions = [];
   const input = [];
@@ -454,12 +550,13 @@ function chatToResponses(body, options = {}) {
 
   const effort = options.reasoningEffort || options.defaultReasoningEffort || body.reasoning?.effort || body.reasoningEffort || body.reasoning_effort;
   if (effort && effort !== "none") request.reasoning = { effort };
-
-  // The ChatGPT Codex endpoint currently rejects max_output_tokens and requires streaming.
-  // It may also reject some sampling parameters for reasoning models, so keep this lean.
   return request;
 }
 
+/**
+ * @param {object} [usage]
+ * @returns {object}
+ */
 function mapUsage(usage = {}) {
   const prompt = usage.input_tokens ?? usage.prompt_tokens ?? 0;
   const completion = usage.output_tokens ?? usage.completion_tokens ?? 0;
@@ -472,6 +569,10 @@ function mapUsage(usage = {}) {
   };
 }
 
+/**
+ * @param {ReadableStream<Uint8Array>|undefined} readable
+ * @returns {AsyncGenerator<{event: string, raw: string, json: object|undefined}>}
+ */
 async function* iterateSSE(readable) {
   if (!readable) return;
   const reader = readable.getReader();
@@ -500,6 +601,10 @@ async function* iterateSSE(readable) {
   }
 }
 
+/**
+ * @param {string} block
+ * @returns {{event: string, raw: string, json: object|undefined}|undefined}
+ */
 function parseSSEBlock(block) {
   if (!block) return undefined;
   let event = "message";
@@ -517,6 +622,13 @@ function parseSSEBlock(block) {
   return { event, raw, json };
 }
 
+/**
+ * @param {object} state
+ * @param {object} delta
+ * @param {string|null} [finishReason]
+ * @param {object} [usage]
+ * @returns {object}
+ */
 function createChatChunk(state, delta, finishReason = null, usage) {
   return {
     id: state.responseId || `chatcmpl_${Date.now()}`,
@@ -528,11 +640,19 @@ function createChatChunk(state, delta, finishReason = null, usage) {
   };
 }
 
+/**
+ * @param {object} state
+ * @returns {string}
+ */
 function finishReasonFromState(state) {
   if (state.toolCalls.size > 0) return "tool_calls";
   return state.finishReason || "stop";
 }
 
+/**
+ * @param {object|undefined} parsed
+ * @returns {object}
+ */
 function parseDispatchInput(parsed) {
   if (typeof parsed?.input_json === "string") {
     try {
@@ -553,6 +673,11 @@ function parseDispatchInput(parsed) {
   return parsed?.input && typeof parsed.input === "object" && !Array.isArray(parsed.input) ? parsed.input : {};
 }
 
+/**
+ * @param {string} name
+ * @param {string} argumentsText
+ * @returns {string}
+ */
 function scrubToolArguments(name, argumentsText) {
   try {
     const parsed = JSON.parse(argumentsText || "{}");
@@ -565,11 +690,6 @@ function scrubToolArguments(name, argumentsText) {
     if (name === "EnterWorktree") {
       if (parsed.name === "" || parsed.name === null) delete parsed.name;
       if (parsed.path === "" || parsed.path === null) delete parsed.path;
-
-      // Codex sometimes puts an existing absolute path in `name`, or invents a
-      // filler `name` while also providing `path`. Claude Code requires at most
-      // one of them. Prefer an explicit path because it enters the intended
-      // existing worktree instead of creating a new one.
       if (typeof parsed.name === "string" && parsed.name.startsWith("/") && parsed.path === undefined) {
         parsed.path = parsed.name;
         delete parsed.name;
@@ -585,6 +705,11 @@ function scrubToolArguments(name, argumentsText) {
   }
 }
 
+/**
+ * @param {string} name
+ * @param {string} argumentsText
+ * @returns {{name: string, argumentsText: string}}
+ */
 function mapMcpDispatchCall(name, argumentsText) {
   if (!isMcpDispatchName(name)) return { name, argumentsText };
   try {
@@ -599,6 +724,11 @@ function mapMcpDispatchCall(name, argumentsText) {
   return { name, argumentsText };
 }
 
+/**
+ * @param {string} name
+ * @param {string} argumentsText
+ * @returns {{name: string, argumentsText: string}}
+ */
 function mapToolCall(name, argumentsText) {
   const mapped = mapMcpDispatchCall(name, argumentsText);
   return {
@@ -607,6 +737,11 @@ function mapToolCall(name, argumentsText) {
   };
 }
 
+/**
+ * @param {object} state
+ * @param {object|undefined} payload
+ * @returns {void}
+ */
 function updateStateFromEvent(state, payload) {
   if (!payload || typeof payload !== "object") return;
   if (payload.response) {
@@ -619,6 +754,11 @@ function updateStateFromEvent(state, payload) {
   }
 }
 
+/**
+ * @param {ReadableStream<Uint8Array>} readable
+ * @param {{error?: Function}|undefined} logger
+ * @returns {ReadableStream<Uint8Array>}
+ */
 function responsesStreamToChatStream(readable, logger) {
   const encoder = new TextEncoder();
   const state = { toolCalls: new Map(), text: "", usage: undefined, finished: false };
@@ -731,6 +871,10 @@ function responsesStreamToChatStream(readable, logger) {
   });
 }
 
+/**
+ * @param {ReadableStream<Uint8Array>} readable
+ * @returns {Promise<object>}
+ */
 async function responsesStreamToChatJson(readable) {
   const state = { toolCalls: new Map(), text: "", usage: undefined, responseId: undefined, created: undefined, model: undefined };
 
@@ -812,12 +956,22 @@ async function responsesStreamToChatJson(readable) {
   };
 }
 
+/** @class */
 class CodexOAuthTransformer {
+  /**
+   * @param {object} [options]
+   */
   constructor(options = {}) {
     this.options = options;
     this.name = options.name || "codex-oauth";
   }
 
+  /**
+   * @param {object} body
+   * @param {object} provider
+   * @param {object} ctx
+   * @returns {Promise<{body: object, config: {url: URL, headers: object}}>}
+   */
   async transformRequestIn(body, provider, ctx) {
     const auth = await loadCodexAuth(this.options);
     const settings = loadCodexSettings(this.options);
@@ -840,8 +994,30 @@ class CodexOAuthTransformer {
     };
   }
 
+  /**
+   * @param {Response} response
+   * @param {object} ctx
+   * @returns {Promise<Response>}
+   */
   async transformResponseOut(response, ctx) {
     const wantsStream = ctx?.req?.body?.stream === true;
+    if (!response.ok) {
+      const text = await response.text();
+      const error = { error: { status: response.status, message: text || response.statusText } };
+      if (wantsStream) {
+        return new Response(`data: ${JSON.stringify(error)}\n\ndata: [DONE]\n\n`, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+      return new Response(JSON.stringify(error), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     if (wantsStream) {
       return new Response(responsesStreamToChatStream(response.body, this.logger), {
         status: response.status,
@@ -863,11 +1039,16 @@ class CodexOAuthTransformer {
   }
 }
 
+/** @type {typeof loadCodexAuth} */
 CodexOAuthTransformer.loadCodexAuth = loadCodexAuth;
+/** @type {typeof chatToResponses} */
 CodexOAuthTransformer.chatToResponses = chatToResponses;
+/** @type {typeof responsesStreamToChatJson} */
 CodexOAuthTransformer.responsesStreamToChatJson = responsesStreamToChatJson;
+/** @type {typeof loadCodexSettings} */
 CodexOAuthTransformer.loadCodexSettings = loadCodexSettings;
 
+/** @type {typeof CodexOAuthTransformer} */
 module.exports = CodexOAuthTransformer;
 
 if (require.main === module) {

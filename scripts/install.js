@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Cross-platform installer for the CCR Codex OAuth bridge.
+/** @file Installer for the CCR Codex OAuth bridge. */
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -18,6 +18,11 @@ const HOST = process.env.CCR_HOST || "127.0.0.1";
 const PORT = Number(process.env.CCR_PORT || 3456);
 const IS_WIN = process.platform === "win32";
 
+/**
+ * @param {string} dir
+ * @param {number} [mode]
+ * @returns {void}
+ */
 function mkdir(dir, mode) {
   fs.mkdirSync(dir, { recursive: true, mode });
   try {
@@ -25,6 +30,12 @@ function mkdir(dir, mode) {
   } catch {}
 }
 
+/**
+ * @param {string} src
+ * @param {string} dest
+ * @param {number} [mode]
+ * @returns {void}
+ */
 function copy(src, dest, mode) {
   mkdir(path.dirname(dest));
   fs.copyFileSync(src, dest);
@@ -33,6 +44,10 @@ function copy(src, dest, mode) {
   } catch {}
 }
 
+/**
+ * @param {string} command
+ * @returns {boolean}
+ */
 function commandExists(command) {
   const result = IS_WIN
     ? spawnSync("where", [command], { stdio: "ignore", windowsHide: true })
@@ -40,6 +55,11 @@ function commandExists(command) {
   return !result.error && result.status === 0;
 }
 
+/**
+ * @param {string} command
+ * @param {string[]} args
+ * @returns {void}
+ */
 function run(command, args) {
   const result = spawnSync(command, args, {
     stdio: "inherit",
@@ -50,11 +70,17 @@ function run(command, args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+/**
+ * @param {string} name
+ * @param {string} targetJs
+ * @returns {void}
+ */
 function createWindowsCmd(name, targetJs) {
   const cmd = `@echo off\r\nnode "%~dp0\\${path.basename(targetJs)}" %*\r\n`;
   fs.writeFileSync(path.join(BIN_DIR, `${name}.cmd`), cmd);
 }
 
+/** @returns {void} */
 function installLaunchers() {
   mkdir(BIN_DIR);
   const entries = [
@@ -77,6 +103,7 @@ function installLaunchers() {
   }
 }
 
+/** @returns {void} */
 function writeDefaultSettings() {
   if (fs.existsSync(SETTINGS_FILE)) return;
   fs.writeFileSync(
@@ -89,6 +116,7 @@ function writeDefaultSettings() {
   } catch {}
 }
 
+/** @returns {void} */
 function writeEmptyMcpConfig() {
   fs.writeFileSync(EMPTY_MCP_FILE, JSON.stringify({ mcpServers: {} }, null, 2) + "\n", { mode: 0o600 });
   try {
@@ -96,6 +124,7 @@ function writeEmptyMcpConfig() {
   } catch {}
 }
 
+/** @returns {void} */
 function installClaudeCommands() {
   const commandsDir = path.join(os.homedir(), ".claude", "commands");
   mkdir(commandsDir, 0o700);
@@ -104,6 +133,7 @@ function installClaudeCommands() {
   }
 }
 
+/** @returns {void} */
 function writeConfig() {
   const configFile = path.join(CCR_DIR, "config.json");
   if (fs.existsSync(configFile)) {
@@ -170,6 +200,7 @@ function writeConfig() {
   } catch {}
 }
 
+/** @returns {void} */
 function main() {
   const major = Number(process.versions.node.split(".")[0]);
   if (major < 20) {

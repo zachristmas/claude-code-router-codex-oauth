@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-// Manage live claude-gpt Codex routing settings.
-// The transformer reads this settings file on every request, so changes apply
-// to the next Claude Code request without restarting CCR.
+/** @file claude-gpt routing settings CLI. */
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -22,6 +20,7 @@ const PRESETS = {
   codex: { model: "gpt-5.3-codex", reasoningEffort: "xhigh" },
 };
 
+/** @returns {void} */
 function usage() {
   console.log(`Usage: claude-gpt-settings [show|set|preset|reset]
 
@@ -42,12 +41,20 @@ not update until a new session, but CCR statusline/logs show the actual route.
 `);
 }
 
+/**
+ * @param {string|undefined} model
+ * @returns {string|undefined}
+ */
 function normalizeModel(model) {
   if (!model) return undefined;
   const value = String(model).includes(",") ? String(model).split(",").pop().trim() : String(model).trim();
   return value;
 }
 
+/**
+ * @param {string} file
+ * @returns {object|undefined}
+ */
 function readJson(file) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -56,10 +63,16 @@ function readJson(file) {
   }
 }
 
+/** @returns {{model: string, reasoningEffort: string}} */
 function readSettings() {
   return { ...DEFAULT_SETTINGS, ...(readJson(SETTINGS_FILE) || {}) };
 }
 
+/**
+ * @param {string} file
+ * @param {*} value
+ * @returns {void}
+ */
 function writeJson0600(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
@@ -68,6 +81,10 @@ function writeJson0600(file, value) {
   } catch {}
 }
 
+/**
+ * @param {{model: string, reasoningEffort: string}} settings
+ * @returns {{model: string, reasoningEffort: string}}
+ */
 function validate(settings) {
   settings.model = normalizeModel(settings.model);
   if (!MODELS.has(settings.model)) {
@@ -79,12 +96,20 @@ function validate(settings) {
   return settings;
 }
 
+/**
+ * @param {{model: string, reasoningEffort: string}} settings
+ * @returns {void}
+ */
 function printSettings(settings) {
   console.log(`model=${settings.model}`);
   console.log(`reasoningEffort=${settings.reasoningEffort}`);
   console.log(`settingsFile=${SETTINGS_FILE}`);
 }
 
+/**
+ * @param {string[]} args
+ * @returns {{model: string, reasoningEffort: string}}
+ */
 function parseSetArgs(args) {
   const next = { ...readSettings() };
   const positional = [];
@@ -109,6 +134,10 @@ function parseSetArgs(args) {
   return next;
 }
 
+/**
+ * @param {{model: string, reasoningEffort: string}} settings
+ * @returns {void}
+ */
 function saveAndPrint(settings) {
   const clean = validate(settings);
   writeJson0600(SETTINGS_FILE, clean);
@@ -116,6 +145,7 @@ function saveAndPrint(settings) {
   console.log("Applies on the next claude-gpt request.");
 }
 
+/** @returns {void} */
 function main() {
   const [command = "show", ...args] = process.argv.slice(2);
   if (["help", "--help", "-h"].includes(command)) return usage();
@@ -129,7 +159,6 @@ function main() {
   }
   if (command === "set") return saveAndPrint(parseSetArgs(args));
 
-  // Convenience: `claude-gpt-settings gpt-5.5 xhigh`
   if (MODELS.has(normalizeModel(command))) return saveAndPrint(parseSetArgs([command, ...args]));
 
   throw new Error(`Unknown command: ${command}`);

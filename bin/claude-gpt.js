@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Cross-platform launcher: Claude Code harness -> CCR -> ChatGPT Codex OAuth.
+/** @file Claude Code launcher through CCR and Codex OAuth. */
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -13,10 +13,19 @@ const DEFAULT_MODEL = "gpt-5.5";
 const DEFAULT_EFFORT = "xhigh";
 const LAUNCH_MODEL = "openai-codex,gpt-5.5";
 
+/**
+ * @template T
+ * @param {T[]} values
+ * @returns {T[]}
+ */
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+/**
+ * @param {string} file
+ * @returns {object|undefined}
+ */
 function readJson(file) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -25,6 +34,11 @@ function readJson(file) {
   }
 }
 
+/**
+ * @param {string} file
+ * @param {*} value
+ * @returns {void}
+ */
 function writeJson0600(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
@@ -33,10 +47,12 @@ function writeJson0600(file, value) {
   } catch {}
 }
 
+/** @returns {void} */
 function ensureEmptyMcpConfig() {
   if (!fs.existsSync(EMPTY_MCP_FILE)) writeJson0600(EMPTY_MCP_FILE, { mcpServers: {} });
 }
 
+/** @returns {string[]} */
 function opencodeAuthCandidates() {
   const home = os.homedir();
   return unique([
@@ -51,6 +67,7 @@ function opencodeAuthCandidates() {
   ]);
 }
 
+/** @returns {object|undefined} */
 function loadOpenCodeAuth() {
   for (const file of opencodeAuthCandidates()) {
     const raw = readJson(file);
@@ -58,18 +75,28 @@ function loadOpenCodeAuth() {
 
     if (raw?.version === 2 && raw.accounts && raw.active) {
       const activeId = raw.active.openai;
-      const account = activeId ? raw.accounts[activeId] : Object.values(raw.accounts).find((entry) => entry.serviceID === "openai");
-      if (account?.credential?.type === "oauth") return account.credential;
+      const entry = activeId && raw.accounts[activeId]
+        ? [activeId, raw.accounts[activeId]]
+        : Object.entries(raw.accounts).find(([, account]) => account.serviceID === "openai");
+      if (entry?.[1]?.credential?.type === "oauth") return { ...entry[1].credential, accountId: entry[1].id || entry[0] };
     }
   }
 }
 
+/**
+ * @param {string} command
+ * @returns {string}
+ */
 function executableName(command) {
   return process.platform === "win32" && !command.toLowerCase().endsWith(".cmd") && !command.toLowerCase().endsWith(".exe")
     ? `${command}.cmd`
     : command;
 }
 
+/**
+ * @param {string} command
+ * @returns {string[]}
+ */
 function voltaNodeBinCandidates(command) {
   const base = path.join(os.homedir(), ".volta", "tools", "image", "node");
   try {
@@ -82,6 +109,10 @@ function voltaNodeBinCandidates(command) {
   }
 }
 
+/**
+ * @param {string} command
+ * @returns {string|undefined}
+ */
 function commandPath(command) {
   const result = process.platform === "win32"
     ? spawnSync("where", [command], { encoding: "utf8", windowsHide: true })
@@ -89,6 +120,11 @@ function commandPath(command) {
   if (!result.error && result.status === 0) return result.stdout.split(/\r?\n/).find(Boolean)?.trim();
 }
 
+/**
+ * @param {string} command
+ * @param {Array<string|undefined>} [extraCandidates]
+ * @returns {string|undefined}
+ */
 function resolveCommand(command, extraCandidates = []) {
   const fromPath = commandPath(command);
   if (fromPath) return fromPath;
@@ -109,6 +145,11 @@ function resolveCommand(command, extraCandidates = []) {
   });
 }
 
+/**
+ * @param {NodeJS.ProcessEnv} env
+ * @param {Array<string|undefined>} dirs
+ * @returns {void}
+ */
 function prependPath(env, dirs) {
   const delimiter = path.delimiter;
   const current = env.PATH || "";
@@ -116,28 +157,43 @@ function prependPath(env, dirs) {
   env.PATH = parts.join(delimiter);
 }
 
+/**
+ * @param {NodeJS.ProcessEnv} env
+ * @param {string} option
+ * @returns {string}
+ */
 function appendNodeOption(env, option) {
   const current = env.NODE_OPTIONS || "";
   if (current.split(/\s+/).includes(option)) return current;
   return `${current} ${option}`.trim();
 }
 
+/**
+ * @param {string[]} args
+ * @returns {boolean}
+ */
 function shouldShowInteractiveBanner(args) {
   if (!process.stdout.isTTY) return false;
   return !args.some((arg) => arg === "-p" || arg === "--print" || arg.startsWith("--print="));
 }
 
+/** @returns {string} */
 function settingsModel() {
   const settings = readJson(SETTINGS_FILE) || {};
   const model = process.env.CLAUDE_GPT_MODEL || settings.model || DEFAULT_MODEL;
   return String(model).includes(",") ? String(model).split(",").pop().trim() : String(model).trim();
 }
 
+/** @returns {string} */
 function settingsEffort() {
   const settings = readJson(SETTINGS_FILE) || {};
   return String(process.env.CLAUDE_GPT_EFFORT || settings.reasoningEffort || DEFAULT_EFFORT).trim();
 }
 
+/**
+ * @param {string[]} args
+ * @returns {string[]}
+ */
 function withLaunchModel(args) {
   const cleaned = [];
   for (let i = 0; i < args.length; i++) {
@@ -152,6 +208,10 @@ function withLaunchModel(args) {
   return ["--model", LAUNCH_MODEL, ...cleaned];
 }
 
+/**
+ * @param {string[]} args
+ * @returns {{args: string[], withMcp: boolean, noMcp: boolean}}
+ */
 function parseWrapperFlags(args) {
   let withMcp = false;
   let noMcp = false;
@@ -173,10 +233,19 @@ function parseWrapperFlags(args) {
   return { args: cleaned, withMcp, noMcp };
 }
 
+/**
+ * @param {string[]} args
+ * @returns {boolean}
+ */
 function hasMcpArgs(args) {
   return args.some((arg) => arg === "--mcp-config" || arg.startsWith("--mcp-config=") || arg === "--strict-mcp-config");
 }
 
+/**
+ * @param {string[]} args
+ * @param {{withMcp: boolean, noMcp: boolean}} flags
+ * @returns {string[]}
+ */
 function withMcpPolicy(args, flags) {
   if (flags.withMcp && !flags.noMcp) return args;
   if (hasMcpArgs(args)) return args;
@@ -184,10 +253,19 @@ function withMcpPolicy(args, flags) {
   return ["--strict-mcp-config", "--mcp-config", EMPTY_MCP_FILE, ...args];
 }
 
+/**
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * @param {string[]} args
+ * @param {string} mcpMode
+ * @returns {Promise<void>}
+ */
 async function showStartupBanner(args, mcpMode) {
   if (!shouldShowInteractiveBanner(args)) return;
   if (process.env.CLAUDE_GPT_BANNER === "0" || process.env.CLAUDE_GPT_BANNER === "false") return;
@@ -203,6 +281,7 @@ async function showStartupBanner(args, mcpMode) {
   if (delay > 0) await sleep(delay);
 }
 
+/** @returns {Promise<void>} */
 async function main() {
   if (!fs.existsSync(AUTH_FILE)) {
     const auth = loadOpenCodeAuth();

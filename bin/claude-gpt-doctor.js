@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Verify the claude-gpt CCR -> Codex OAuth setup without printing secrets.
+/** @file claude-gpt setup checks. */
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -16,6 +16,10 @@ const DEFAULTS = { model: "gpt-5.5", reasoningEffort: "xhigh" };
 let failures = 0;
 let warnings = 0;
 
+/**
+ * @param {string} file
+ * @returns {object|undefined}
+ */
 function readJson(file) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -24,6 +28,10 @@ function readJson(file) {
   }
 }
 
+/**
+ * @param {string} command
+ * @returns {boolean}
+ */
 function commandExists(command) {
   const result = process.platform === "win32"
     ? spawnSync("where", [command], { stdio: "ignore", windowsHide: true })
@@ -31,35 +39,63 @@ function commandExists(command) {
   return !result.error && result.status === 0;
 }
 
+/**
+ * @param {string} message
+ * @returns {void}
+ */
 function pass(message) {
   console.log(`✅ ${message}`);
 }
 
+/**
+ * @param {string} message
+ * @returns {void}
+ */
 function warn(message) {
   warnings++;
   console.log(`⚠️  ${message}`);
 }
 
+/**
+ * @param {string} message
+ * @returns {void}
+ */
 function fail(message) {
   failures++;
   console.log(`❌ ${message}`);
 }
 
+/**
+ * @param {string|undefined} model
+ * @returns {string}
+ */
 function normalizeModel(model) {
   const value = String(model || DEFAULTS.model);
   return value.includes(",") ? value.split(",").pop().trim() : value.trim();
 }
 
+/**
+ * @param {*} value
+ * @returns {string}
+ */
 function pretty(value) {
   return JSON.stringify(value, null, 2);
 }
 
+/**
+ * @param {string} name
+ * @returns {void}
+ */
 function hasCommand(name) {
   const file = path.join(os.homedir(), ".claude", "commands", `${name}.md`);
   if (fs.existsSync(file)) pass(`/${name} slash command installed`);
   else warn(`/${name} slash command missing at ${file}`);
 }
 
+/**
+ * @param {object} config
+ * @returns {Promise<void>}
+ */
 async function healthCheck(config) {
   const host = config.HOST || "127.0.0.1";
   const port = config.PORT || 3456;
@@ -80,6 +116,11 @@ async function healthCheck(config) {
   }
 }
 
+/**
+ * @param {object} settings
+ * @param {boolean} live
+ * @returns {Promise<void>}
+ */
 async function verifyTransformer(settings, live) {
   if (!fs.existsSync(TRANSFORMER_FILE)) {
     fail(`Transformer missing: ${TRANSFORMER_FILE}`);
@@ -156,6 +197,7 @@ async function verifyTransformer(settings, live) {
   }
 }
 
+/** @returns {Promise<void>} */
 async function main() {
   const args = new Set(process.argv.slice(2));
   const live = !args.has("--local") && !args.has("--no-live");

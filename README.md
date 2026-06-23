@@ -4,19 +4,19 @@ Run the **Claude Code harness** against your ChatGPT/Codex OAuth subscription qu
 
 ## What you get
 
-- `claude` — unchanged; normal Claude Code/work plan.
-- `claude-work` — direct Claude Code/work-plan launcher that unsets CCR env vars.
-- `claude-gpt` — Claude Code -> CCR -> ChatGPT Codex backend using OAuth.
-- `claude-gpt-auth` — local OAuth credential helper.
-- `claude-gpt-settings` — live model/reasoning settings helper.
-- `claude-gpt-doctor` — verifies CCR, OAuth, settings, and live Codex routing.
-- `/gpt-settings`, `/gpt-model`, `/gpt-effort` — Claude Code slash commands installed by the installer.
+- `claude`: unchanged; normal Claude Code/work plan.
+- `claude-work`: direct Claude Code/work-plan launcher that unsets CCR env vars.
+- `claude-gpt`: Claude Code -> CCR -> ChatGPT Codex backend using OAuth.
+- `claude-gpt-auth`: local OAuth credential helper.
+- `claude-gpt-settings`: live model/reasoning settings helper.
+- `claude-gpt-doctor`: verifies CCR, OAuth, settings, and live Codex routing.
+- `/gpt-settings`, `/gpt-model`, `/gpt-effort`: Claude Code slash commands installed by the installer.
 
 Works on macOS, Linux, and Windows with Node 20+.
 
 ## Important warning
 
-This uses the ChatGPT Codex backend endpoint (`chatgpt.com/backend-api/codex/responses`) and an OAuth flow compatible with OpenCode/Codex. That behavior is unofficial/private-ish and may break if OpenAI changes it.
+This uses the ChatGPT Codex backend endpoint (`chatgpt.com/backend-api/codex/responses`) and an OAuth flow compatible with OpenCode/Codex. That behavior is unofficial and private, and may break if OpenAI changes it.
 
 Do **not** commit or share OAuth files. Tokens are stored locally at:
 
@@ -110,7 +110,7 @@ By default `claude-gpt` **always launches Claude Code with**:
 
 and the transformer defaults the upstream Codex request to `gpt-5.5` with the configured reasoning effort.
 
-By default `claude-gpt` includes your normal project/user MCP servers, but the transformer compresses large MCP tool groups into dispatcher tools before sending them to Codex. This keeps BizBuddy/codebase MCPs available while avoiding Codex backend `server_error`/timeout loops from very large tool lists.
+By default `claude-gpt` includes normal project/user MCP servers. The transformer compresses large MCP tool groups into dispatchers before sending them to Codex to reduce backend `server_error`/timeout loops.
 
 To disable MCPs for a session and use built-in tools only:
 
@@ -120,7 +120,7 @@ claude-gpt --no-mcp
 CLAUDE_GPT_MCP=off claude-gpt
 ```
 
-Interactive startup prints a banner showing the route and active upstream settings. The installer also replaces/augments CCR's statusline so it shows the route plus current context/session token counters when Claude Code provides them:
+Interactive startup prints a banner showing the route and active upstream settings. The installer also updates CCR's statusline so it shows the route plus current context/session token counters when Claude Code provides them:
 
 ```text
 GPT-5.5 xhigh via Codex OAuth · ctx 42.1k/400k 11% · out 3.7k
@@ -177,27 +177,27 @@ The installer backs up an existing CCR config before overwriting it:
 
 ## Environment overrides
 
-- `CCR_DIR` — default `~/.claude-code-router`
-- `CCR_HOST` — default `127.0.0.1`
-- `CCR_PORT` — default `3456`
-- `CCR_APIKEY` — default `sk-ccr-local`
-- `CODEX_OAUTH_AUTH_FILE` — default `~/.claude-code-router/codex-auth.json`
-- `BIN_DIR` — direct installer launcher dir, default `~/.local/bin`
-- `CLAUDE_GPT_MODEL` — upstream Codex model override
-- `CLAUDE_GPT_EFFORT` / `CLAUDE_GPT_REASONING_EFFORT` — upstream Codex reasoning effort override
-- `CLAUDE_GPT_MCP=off` — disable normal Claude Code/project MCP servers and use built-in tools only
-- `CLAUDE_GPT_COMPRESS_MCP=0` — disable MCP dispatcher compression before sending tools to Codex
-- `CLAUDE_GPT_BANNER=0` — disable interactive startup banner
-- `CLAUDE_GPT_BANNER_DELAY_MS` — banner delay before launching Claude Code, default `900`
-- `SKIP_CCR_INSTALL=1` — do not auto-install CCR
+- `CCR_DIR`: default `~/.claude-code-router`
+- `CCR_HOST`: default `127.0.0.1`
+- `CCR_PORT`: default `3456`
+- `CCR_APIKEY`: default `sk-ccr-local`
+- `CODEX_OAUTH_AUTH_FILE`: default `~/.claude-code-router/codex-auth.json`
+- `BIN_DIR`: direct installer launcher dir, default `~/.local/bin`
+- `CLAUDE_GPT_MODEL`: upstream Codex model override
+- `CLAUDE_GPT_EFFORT` / `CLAUDE_GPT_REASONING_EFFORT`: upstream Codex reasoning effort override
+- `CLAUDE_GPT_MCP=off`: disable normal Claude Code/project MCP servers and use built-in tools only
+- `CLAUDE_GPT_COMPRESS_MCP=0`: disable MCP dispatcher compression before sending tools to Codex
+- `CLAUDE_GPT_BANNER=0`: disable interactive startup banner
+- `CLAUDE_GPT_BANNER_DELAY_MS`: banner delay before launching Claude Code, default `900`
+- `SKIP_CCR_INSTALL=1`: do not auto-install CCR
 
 ## Token/context display and compaction
 
 The statusline token counters come from Claude Code's statusline payload:
 
-- `ctx used/window %` — current context-window input tokens and percent
-- `out` — current context/session output token counter when available
-- trailing `↑` / `↓` modules — last request input/output usage
+- `ctx used/window %`: current context-window input tokens and percent
+- `out`: current context/session output token counter when available
+- trailing `↑` / `↓` modules: last request input/output usage
 
 No custom `claude-gpt` auto-compact limit is configured. Claude Code still owns compaction behavior. In this bridge config, CCR's only token threshold is routing-related:
 
@@ -221,7 +221,7 @@ claude-gpt --allowedTools 'Bash(pwd)' -p 'Run pwd and reply only with the result
 
 CCR receives Claude Code traffic on Anthropic-compatible `/v1/messages`, converts it to OpenAI chat-completions shape, then this transformer:
 
-1. loads/refreshed local ChatGPT OAuth credentials,
+1. loads or refreshes local ChatGPT OAuth credentials,
 2. converts OpenAI chat-completions-style requests to OpenAI Responses-style input,
 3. sends them to ChatGPT Codex with `stream: true` and `store: false`,
 4. converts Codex Responses SSE back to OpenAI chat-completions SSE/JSON,

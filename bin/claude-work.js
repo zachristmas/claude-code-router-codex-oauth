@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Cross-platform launcher: direct Claude Code / work-plan routing.
+/** @file Direct Claude Code launcher. */
 
 const { spawn } = require("node:child_process");
 
